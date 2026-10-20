@@ -19,7 +19,7 @@ Cut-against: 0.32.0: the SlidingWindowManager.cache_blocks override stays after 
   mamba_block_size, the same fix)
 Retires-when: rides with KVarN
 
---- exported from e9efe8870 (kvarn-v2-runner-0.32.0); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from f56496ca6 (kvarn-v2-runner-0.32.0); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/model_executor/layers/attention/attention.py b/model_executor/layers/attention/attention.py
 index e3389d4e1..9ea8e007a 100644
@@ -183,7 +183,7 @@ index 6cd731789..3dded1542 100644
      def prepare_inputs(
          self,
 diff --git a/v1/worker/gpu/spec_decode/dflash2/speculator.py b/v1/worker/gpu/spec_decode/dflash2/speculator.py
-index 41ede8286..ba6677a96 100644
+index e914af8d5..5609a83e0 100644
 --- a/v1/worker/gpu/spec_decode/dflash2/speculator.py
 +++ b/v1/worker/gpu/spec_decode/dflash2/speculator.py
 @@ -97,6 +97,9 @@
@@ -205,7 +205,7 @@ index 41ede8286..ba6677a96 100644
              (self.max_num_reqs, self.draft_block),
              dtype=self.draft_tokens.dtype,
              device=device,
-@@ -750,6 +753,8 @@
+@@ -752,6 +755,8 @@
          scores = self._score_candidates(candidate_ids, unary_logits, hidden_states)
          # The walk writes the drafter's own block into _selector_tokens; it is copied into
          # draft_tokens below, where _apply_lookup can fuse it with the lookup.

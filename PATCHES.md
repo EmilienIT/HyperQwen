@@ -41,7 +41,7 @@ headers in the patch file (the files are the source) and run the script.
 | int4-kv-per-token-head | feature | int4 per-token-head KV cache with the DFlash2 drafter | none | 0.32.0 | upstreamed |
 | marlin-repack-staged-sm80 | local | one grow-only staging buffer for the sm80 Marlin repack (fork #27), opt-in with `VLLM_MARLIN_REPACK_STAGED=1` | none | 0.32.0 | stays |
 | offload-dflash-eagle-groups | fix | OffloadingConnector under dflash flagged every KV group as draft attention (fork #33) | none yet | 0.32.0 | upstream PR |
-| dflash2-ngram-chains | feature | quantized candidate chains for the drafter; `propose` override | none | 0.32.0 | upstreamed |
+| dflash2-ngram-chains | feature | quantized candidate chains for the drafter; `propose` override | none | 0.32.0: propose() takes dp_sync_state (#60754 renamed dp_sync) and forwards num_speculative_tokens, which the 0.32 runner passes by keyword on every step | upstreamed |
 | offload-wsl2-devptr | local | CPU offload tier device pointers on WSL2 | none | 0.32.0 | stays |
 | spec-decode-int4-kv-mq3d | feature | multi-query 3D int4 verify path | none | 0.32.0 | rides with int4-kv-per-token-head |
 | dflash2-prewarm | fix | compile every DFlash2 rung at boot instead of at first request | none yet | 0.32.0 | upstream PR |
