@@ -18,6 +18,7 @@ Note the corpus runs ~2.9 characters per token, not the 3.6 labd_bench.py assume
 --ctx N produces roughly 1.24 N tokens. --ctx 100000 gave 112,655-token prompts.
 """
 import glob
+import importlib.util
 import os
 import sys
 
@@ -28,9 +29,13 @@ TARGET = 900_000  # characters of filler, on top of the frozen head
 if not os.path.exists(BASE):
     sys.exit(f"{BASE} not found -- run bench/labd_bench.py once to build the frozen corpus")
 
-base = open(BASE).read()
-src = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "venv",
-                   "lib", "python3.12", "site-packages", "vllm", "v1")
+with open(BASE, encoding="utf-8", newline="") as f:
+    base = f.read()
+# Find the active install without importing vLLM (which may initialize CUDA).
+spec = importlib.util.find_spec("vllm")
+if spec is None or not spec.submodule_search_locations:
+    sys.exit("vLLM is not installed in this Python environment; run with the serving venv's Python")
+src = os.path.join(next(iter(spec.submodule_search_locations)), "v1")
 files = sorted(glob.glob(os.path.join(src, "**", "*.py"), recursive=True))
 if not files:
     sys.exit(f"no vLLM source under {src}")
@@ -51,5 +56,6 @@ for f in files:
 long = base + "".join(parts)
 assert long[: len(base)] == base, "the frozen head must stay byte-identical"
 os.makedirs(os.path.dirname(OUT), exist_ok=True)
-open(OUT, "w").write(long)
+with open(OUT, "w", encoding="utf-8", newline="") as f:
+    f.write(long)
 print(f"{OUT}: {len(long)} chars ({len(base)} frozen head + {len(parts)} source files)")

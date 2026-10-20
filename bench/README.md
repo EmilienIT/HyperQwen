@@ -48,6 +48,7 @@ none, and the `.sh` scripts ask `/v1/models`. The `.sh` measurements take `PORT`
 | `labd_bench.py` | measurement | server | 0 | Six long-context greedy tasks: decode speed and tokens per step. |
 | `labd_soak.py` | test | server | 0 or 1 | The long verify block at batch > 1. |
 | `make_long_corpus.py` | data tool | `~/bench/labd_corpus.txt`, vLLM source | 0, or 1 if an input is missing | Builds the long-context LABD corpus. |
+| `test_long_corpus.py` | test | CPU | 0 or 1 | Active vLLM source discovery without importing it, and byte-preserved frozen corpus heads. |
 | `mq3d_capacity_property.py` | test | CPU | 0, 1, 2 if no batch was eligible, 3 if `--mutate` did not break the property | The int4 3D scratch capacity property. `--mutate seq-rows` is its negative control and exits 0 when it breaks the property. |
 | `mq3d_layer2_oracle.py` | test | GPU | 0 or 1 | Independent Layer-2 oracle for the int4 3D scratch patch. Writes `mq3d_layer2_verdicts.jsonl` beside itself unless `ORACLE_OUT` is set. |
 | `mq3d_layer2_verdicts.jsonl` | data | | | The oracle's records from the 4090 run. |
