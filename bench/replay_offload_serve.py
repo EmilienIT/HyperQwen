@@ -11,7 +11,7 @@ Sequence against a running server:
 
     TIER_GIB=<--kv-offloading-size> python bench/replay_offload_serve.py TAG PORT DEPTH_CHARS N_EVICTORS
 Prints one JSON line per request and a final verdict line. Exits 0 on SERVED, 1 on NOT-SERVED, 2 on
-INVALID-TIER-OVERFLOW.
+invalid measurements (missing corpus/metrics, counter reset or tier overflow).
 
 Sizing rule (the verdict is meaningless otherwise): the GPU pool must be smaller than the tier IN TOKENS, and the
 evictor traffic must exceed the GPU pool while staying under the tier. A token costs several times more in the tier
@@ -36,6 +36,9 @@ TAG, PORT, DEPTH, N = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.a
 os.environ["VLLM_API"] = f"http://127.0.0.1:{PORT}"
 CORPUS = os.environ.get("DEPTH_CORPUS_GLOB", "*.txt")  # any glob of plain-text files to build fresh prompts from
 TEXT = "\n\n".join(open(f, encoding="utf-8").read() for f in sorted(glob.glob(CORPUS)))
+if not TEXT.strip():
+    print(f"INVALID: no nonempty corpus matched {CORPUS!r}", file=sys.stderr)
+    sys.exit(2)
 while len(TEXT) < (N + 2) * DEPTH + 100000:
     TEXT += "\n\n" + TEXT
 
@@ -84,27 +87,43 @@ def store_gb(m):
     return sum(stores) / 1e9
 
 
+def load_bytes(m):
+    """Use the current byte counter, else its deprecated direction-labelled alias, never both."""
+    current = [v for k, v in m.items() if k.split("{", 1)[0] == "vllm:kv_offload_load_bytes_total"]
+    if current:
+        return sum(current)
+    legacy = [v for k, v in m.items() if k.split("{", 1)[0] == "vllm:kv_offload_total_bytes_total" and "CPU_to_GPU" in k]
+    return sum(legacy) if legacy else None
+
+
 m0 = metrics()  # counters are cumulative for the life of the server; the guard needs the stores of THIS run
 x1 = ask("X-cold", fixed(0))
 for i in range(1, N + 1):
     ask(f"Y{i}", fixed(i))
+before_replay = load_bytes(metrics())
 x2 = ask("X-again", fixed(0))
+after_replay = load_bytes(x2["offload"])
+loaded_bytes = None if before_replay is None or after_replay is None else after_replay - before_replay
 ratio = x2["ttft_s"] / max(x1["ttft_s"], 0.01)
 loads = {k: v for k, v in x2["offload"].items() if "CPU_to_GPU" in k or "load" in k.lower()}
 stores_gb = store_gb(metrics()) - store_gb(m0)
 TIER_GIB = float(os.environ.get("TIER_GIB", "0") or 0)
 
 
-def verdict(ratio, stores_gb, tier_gib):
-    """SERVED / NOT-SERVED, or INVALID-TIER-OVERFLOW when the stores could not have fit the tier."""
+def verdict(ratio, stores_gb, tier_gib, loaded_bytes):
+    """SERVED needs a fast replay and actual loaded bytes; invalid measurements have no verdict."""
     if tier_gib and stores_gb > tier_gib * 1.073741824:
         return "INVALID-TIER-OVERFLOW"
-    return "SERVED" if ratio < 0.5 else "NOT-SERVED"
+    if loaded_bytes is None:
+        return "INVALID-NO-LOAD-METRICS"
+    if loaded_bytes < 0:
+        return "INVALID-COUNTER-RESET"
+    return "SERVED" if ratio < 0.5 and loaded_bytes > 0 else "NOT-SERVED"
 
 
-V = verdict(ratio, stores_gb, TIER_GIB)
+V = verdict(ratio, stores_gb, TIER_GIB, loaded_bytes)
 if V == "INVALID-TIER-OVERFLOW":
     print(f"INVALID: {stores_gb:.2f} GB stored into a {TIER_GIB:g} GiB tier; X left the tier before X-again, so this run cannot "
           "tell a veto from an eviction. Shrink the GPU pool or the evictor count, or grow the tier.", file=sys.stderr)
-print(json.dumps({"tag": TAG, "verdict": V, "stores_gb": round(stores_gb, 2), "tier_gib": TIER_GIB, "cold_ttft_s": x1["ttft_s"], "again_ttft_s": x2["ttft_s"], "ratio": round(ratio, 2), "cached_again": x2["cached"], "loads": loads}), flush=True)
+print(json.dumps({"tag": TAG, "verdict": V, "stores_gb": round(stores_gb, 2), "tier_gib": TIER_GIB, "cold_ttft_s": x1["ttft_s"], "again_ttft_s": x2["ttft_s"], "ratio": round(ratio, 2), "cached_again": x2["cached"], "loads": loads, "loaded_bytes": loaded_bytes}), flush=True)
 sys.exit({"SERVED": 0, "NOT-SERVED": 1}.get(V, 2))

@@ -60,7 +60,8 @@ none, and the `.sh` scripts ask `/v1/models`. The `.sh` measurements take `PORT`
 | `prompts_real.jsonl` | data | | | The realistic prompts that `run_benchmarks.sh`, `real_rep.sh`, `prefill_ab.sh` and `act_calib.py` read. |
 | `quality_battery.py` | quality measurement | server, `bench/quality-data/` | 0 | Perplexity on three corpora and GSM8K accuracy. |
 | `real_rep.sh` | measurement | server, model | the last repeat's exit | The C1 row of `run_benchmarks.sh`, repeated. |
-| `replay_offload_serve.py` | reproducer | server with an offload tier | 0 if SERVED, 1 if NOT-SERVED, 2 if INVALID-TIER-OVERFLOW | Whether the CPU offload tier serves a stored request back. |
+| `replay_offload_serve.py` | reproducer | server with an offload tier | 0 if SERVED, 1 if NOT-SERVED, 2 if the corpus/metrics are missing, counters reset or the tier overflows | Whether a fast replay loads bytes from the CPU offload tier. |
+| `test_replay_offload.py` | test | CPU | 0 or 1 | Replay verdicts on CPU stubs: GPU hits, actual load deltas, missing/reset counters and the legacy metric. |
 | `residue_sweep.py` | reproducer | server, model | 0, or 1 if a residue is broken | One prompt for each length residue mod 128. |
 | `run_benchmarks.sh` | measurement | server, model | 0, or 1 if there is no server | The README numbers. |
 | `seat_ttft.py` | measurement | server | 0, or 2 if every request failed | Cold and warm TTFT at N=1. |
