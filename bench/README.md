@@ -46,6 +46,7 @@ none, and the `.sh` scripts ask `/v1/models`. The `.sh` measurements take `PORT`
 | `interleave_dose.py` | measurement | server | 0 | Prefix reuse against a dose of interleaved traffic, with the single-conversation control. |
 | `labd_accept.py` | measurement | server | 0, or 1 if the server ignores `return_tokens_as_token_ids` | Teacher-forced tokens per step for lookup-augmented drafting. |
 | `labd_bench.py` | measurement | server | 0 | Six long-context greedy tasks: decode speed and tokens per step. |
+| `labd_corpus.py` | library | CPU | | Reuses the frozen LABD corpus, or builds it from this checkout's documentation on first run. |
 | `labd_soak.py` | test | server | 0 or 1 | The long verify block at batch > 1. |
 | `make_long_corpus.py` | data tool | `~/bench/labd_corpus.txt`, vLLM source | 0, or 1 if an input is missing | Builds the long-context LABD corpus. |
 | `mq3d_capacity_property.py` | test | CPU | 0, 1, 2 if no batch was eligible, 3 if `--mutate` did not break the property | The int4 3D scratch capacity property. `--mutate seq-rows` is its negative control and exits 0 when it breaks the property. |
@@ -72,6 +73,7 @@ none, and the `.sh` scripts ask `/v1/models`. The `.sh` measurements take `PORT`
 | `test_kv_cache_seat_budget.py` | test | image | 0 or 1 | The KV cache seat budget line (`kv-cache-seat-budget.patch`) against five measured boots, with vLLM's own spec classes. |
 | `test_kvarn_recycled_pages.py` | test | image | 0 or 1 | KVarN's recycled-page drop (#208). |
 | `test_labd_bench_clock.py` | test | CPU | 0 or 1 | `labd_bench.py` against a stub server, with the wall clock stepped back: TTFT and decode rate as the stub served them. |
+| `test_labd_corpus.py` | test | CPU | 0 or 1 | Both LABD scripts on a fresh checkout and an existing frozen corpus; missing documentation and relative corpus paths. |
 | `test_lookup_kernels.py` | kernel test | GPU | 0 or 1 | The LABD kernels against a Python reference. |
 | `test_marlin_int8_asym.py` | kernel test | GPU | 0 or 1 | Marlin W4A8-INT8 with zero points against W4A16. |
 | `test_model_verification.py` | test | CPU | 0 or 1 | Model verification and selection. Cuts a heredoc out of `verify.sh`. |
