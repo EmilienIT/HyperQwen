@@ -24,6 +24,7 @@ tables are not implicated.
 Usage: python bench/quality_battery.py <tag> [--ppl-only] [--gsm-only] [--gsm-n 200]
 """
 import json, os, sys, glob, re, math, time, random
+import importlib.util
 from concurrent.futures import ThreadPoolExecutor
 import pyarrow.parquet as pq
 
@@ -48,7 +49,13 @@ def docs():
         if len(d) > 1500:
             out.append(("da", d[:1200])); n+=1
         if n>=40: break
-    files = sorted(glob.glob(os.path.join(HERE, "..", "venv/lib/python3.12/site-packages/vllm/v1/core/*.py")))
+    spec = importlib.util.find_spec("vllm")
+    if spec is None or not spec.submodule_search_locations:
+        raise RuntimeError("vLLM is not installed in this Python environment; the code corpus is required")
+    src = os.path.join(next(iter(spec.submodule_search_locations)), "v1", "core")
+    files = sorted(glob.glob(os.path.join(src, "*.py")))
+    if not files:
+        raise RuntimeError(f"no vLLM code corpus found under {src}")
     for f in files:
         s = open(f).read()
         for i in range(0, min(len(s), 4*1200), 1200):
