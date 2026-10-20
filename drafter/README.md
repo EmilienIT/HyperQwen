@@ -9,6 +9,11 @@ things that did work.
 
 Everything here runs on the 3090 in the serving venv; ~6 h of GPU time end to end.
 
+`gen_data.py` resumes complete records in `data/gen.jsonl`. It removes an interrupted
+final record before appending and adds a missing final newline to complete records;
+corruption earlier in the file stops the run instead of being silently skipped.
+The stdlib-only recovery helper is `generation_state.py`.
+
 ## What actually mattered (in order)
 
 1. **The draft-head vocabulary.** The MTP drafter scores a 40,960-row slice of `lm_head`
