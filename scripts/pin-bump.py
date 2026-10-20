@@ -5,13 +5,14 @@
 
 What it changes (and only this; narrative docs that describe a past pin are left for a person):
   - docker/requirements.txt  vllm==<old>          -> vllm==<new>
-  - verify.sh                the version check, the kvarn patch names
+  - verify.sh                the version check (its KVarN list comes from patches/apply.sh --list since #288)
   - patches/apply.sh         the KVARN array's kvarn-*-<old>.patch names (the list lives here since syv-ai #242)
   - Dockerfile               the header comment's "vLLM <old>"
   - kvarn/install.sh         the "vLLM <old> venv" comment
   - docs/install.md          the `pip install vllm==<old>` line, the patches' "written against", and
                              flashinfer-cubin==<x>, read from vLLM's own requirements/cuda.txt at the NEW tag
-    (the cubin package is not on PyPI and must match flashinfer-python exactly; 0.30.0 moved it to 0.6.18.post1)
+    (the cubin package is not on PyPI and must match flashinfer-python exactly; 0.30.0 moved it to 0.6.18.post1;
+    from 0.32.0, which no longer lists it, it is read from the flashinfer-python pin)
 Every file it touches is listed with its line count changed; anything it expected and did not find is an error.
 """
 import argparse, re, subprocess, sys
@@ -23,9 +24,11 @@ sys.stdout.reconfigure(encoding="utf-8")
 def flashinfer_at(fork, tag):
     txt = subprocess.run(["git", "-C", fork, "show", f"{tag}:requirements/cuda.txt"], capture_output=True, text=True,
                          encoding="utf-8").stdout
-    m = re.search(r"^flashinfer-cubin==(\S+)", txt, re.M)
+    # 0.32.0 dropped flashinfer-cubin from cuda.txt (vllm #58765 installs it with `vllm download-kernels`), so fall back
+    # to flashinfer-python, which the cubin package has to equal anyway.
+    m = re.search(r"^flashinfer-cubin==(\S+)", txt, re.M) or re.search(r"^flashinfer-python==(\S+)", txt, re.M)
     if not m:
-        sys.exit(f"no flashinfer-cubin pin in {tag}:requirements/cuda.txt")
+        sys.exit(f"no flashinfer-cubin or flashinfer-python pin in {tag}:requirements/cuda.txt")
     return m.group(1)
 
 
@@ -45,8 +48,7 @@ def main():
     kv = (rf"\bkvarn-((?:[a-z0-9]+-)*){o}\.patch", rf"kvarn-\g<1>{new}.patch")
     edits = {
         "docker/requirements.txt": [(rf"^vllm=={o}(?=\r?$)", f"vllm=={new}"), (rf"# vllm=={o} ", f"# vllm=={new} ")],
-        "verify.sh": [(rf'\[ "\$VER" = "{o}" \]', f'[ "$VER" = "{new}" ]'), (rf"written against {o}\)", f"written against {new})"),
-                      kv],
+        "verify.sh": [(rf'\[ "\$VER" = "{o}" \]', f'[ "$VER" = "{new}" ]'), (rf"written against {o}\)", f"written against {new})")],
         "patches/apply.sh": [kv],
         "Dockerfile": [(rf"# vLLM {o} ", f"# vLLM {new} ")],
         "kvarn/install.sh": [(rf"vLLM {o} venv", f"vLLM {new} venv")],
