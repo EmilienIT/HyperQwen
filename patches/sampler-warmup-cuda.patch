@@ -26,10 +26,10 @@ Cut-against: 0.32.0: #58092 is in the pin, still gated to ROCm by #58465; the pa
 Retires-when: the pin that carries #58092 with CUDA registration (upstream gates it to ROCm; an
   opt-in is the ask)
 
---- exported from 298f617d4 (sampler-warmup-cuda); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from 408780872 (sampler-warmup-cuda); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/v1/worker/gpu/model_runner.py b/v1/worker/gpu/model_runner.py
-index b26c1bced..cf2178291 100644
+index 2128b119d..26651deb7 100644
 --- a/v1/worker/gpu/model_runner.py
 +++ b/v1/worker/gpu/model_runner.py
 @@ -461,15 +461,14 @@

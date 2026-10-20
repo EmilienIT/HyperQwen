@@ -4,10 +4,11 @@ Kind: feature
 What: lookup-augmented drafting for DFlash2 (n-gram search over the context)
 Upstream: none
 Cut-against: 0.32.0: the lookup's draft count is clamped to the step's num_spec_tokens, which #57053 (dynamic
-  K) now slices the drafts to; with dynamic K off the two are equal
+  K) now slices the drafts to; with dynamic K off the two are equal. A None from next_num_draft_tokens() (all
+  of them) stays None, which set_draft_tokens reads as the sliced width
 Retires-when: upstreamed
 
---- exported from 4c72931e1 (dflash2-lookup-drafting); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from adfd9cd0b (dflash2-lookup-drafting); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/model_executor/models/qwen3_dflash.py b/model_executor/models/qwen3_dflash.py
 index 44b7865da..a1651f208 100644
@@ -148,7 +149,7 @@ index 73be62319..1a396696a 100644
          capture_varlen_decode = (
              separate_decode_routine and bool(decode_mode) and self.varlen_decode
 diff --git a/v1/worker/gpu/model_runner.py b/v1/worker/gpu/model_runner.py
-index 57cef586f..6cd731789 100644
+index 57cef586f..37c0378d6 100644
 --- a/v1/worker/gpu/model_runner.py
 +++ b/v1/worker/gpu/model_runner.py
 @@ -317,6 +317,9 @@
@@ -171,7 +172,7 @@ index 57cef586f..6cd731789 100644
              self.prompt_logprobs_worker = PromptLogprobsWorker(
                  self.max_num_reqs,
                  self.device,
-@@ -2263,9 +2269,19 @@
+@@ -2263,9 +2269,21 @@
          if self.num_speculative_steps > 0:
              # Spec-decode and diffusion LLMs both use draft tokens but the latter does
              # not have a speculator (i.e. self.speculator is None)
@@ -182,8 +183,10 @@ index 57cef586f..6cd731789 100644
 +                # Lookup-augmented drafting proposes a long block only while the request
 +                # is reproducing its context; the rest of the time it asks the scheduler
 +                # to verify the drafter's own (much cheaper) block. It can only shrink the
-+                # block the scheduler sized for this step (dynamic K), never grow it.
-+                num_draft = min(self.speculator.next_num_draft_tokens(), num_spec_tokens)
++                # block the scheduler sized for this step (dynamic K), never grow it. None
++                # means all of them, which set_draft_tokens reads as num_spec_tokens.
++                n = self.speculator.next_num_draft_tokens()
++                num_draft = None if n is None else min(n, num_spec_tokens)
              self.draft_tokens_handler.set_draft_tokens(
                  input_batch,
                  self.req_states.draft_tokens[input_batch.idx_mapping, :num_spec_tokens],
