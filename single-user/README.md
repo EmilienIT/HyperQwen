@@ -419,6 +419,11 @@ Point your chat client at `http://<host>:18020/v1` with the key from
 `api_key.txt`. Works with anything that speaks the OpenAI API, tool calling
 included (`tools` + `tool_choice: "auto"` come back as `tool_calls`).
 
+With `VISION=1`, `bash verify.sh` also checks that two different images produce
+the numbers drawn in their pixels. Run `python bench/vision_smoke.py` separately
+against a remote server using `VLLM_API` and the usual client key. This is an image
+round-trip check, not a Vision quality benchmark.
+
 ## Knobs
 
 | var | default | notes |
