@@ -43,7 +43,7 @@ PY=${PY:-$HERE/venv/bin/python}
 echo "== environment"
 [ -x "$PY" ] && ok "python: $PY" || { fail "no $PY (see README Setup)"; exit 1; }
 VER=$($PY -c "import vllm; print(vllm.__version__)" 2>/dev/null | tail -n1)
-[ "$VER" = "0.31.0" ] && ok "vllm $VER" || warn "vllm ${VER:-missing} (patches were written against 0.31.0)"
+[ "$VER" = "0.32.0" ] && ok "vllm $VER" || warn "vllm ${VER:-missing} (patches were written against 0.32.0)"
 SP=$($PY -c "import vllm, os; print(os.path.dirname(vllm.__file__))" 2>/dev/null | tail -n1)
 [ -n "$SP" ] && [ -d "$SP" ] && ok "vllm package at $SP" || { fail "cannot import vllm with $PY"; exit 1; }
 if [ $INSTALL = 0 ]; then
@@ -430,9 +430,10 @@ if [ $NOSRV = 0 ]; then
     # gotcha 32 (an empty-vocab dir encodes everything to []) and chat-template
     # drift at the HTTP boundary the bench client's alignment probe uses.
     #
-    # The 404-names / keyless-401 / /v1 rows describe behaviour three serving
-    # patches add, so they are graded against the installed tree instead of
-    # asserted unconditionally: FAIL once the patch is in $SP (the contract is
+    # The keyless-401 and /v1 rows describe behaviour two serving patches add,
+    # so they are graded against the installed tree instead of asserted
+    # unconditionally (the 404-names row is vLLM's own from 0.32.0, vllm
+    # #59889, so it is asserted): FAIL once the patch is in $SP (the contract is
     # real and the server breaks it), WARN while it is not (nothing is wrong
     # with this install — the image predates the patch). Without the gate every
     # live box reads red between merging the patches and rebuilding the image,
@@ -501,10 +502,9 @@ print(",".join(map(str, json.load(sys.stdin).get("tokens", ()))))' 2>/dev/null)
     fi
     TOK_R=$(curl -s -w '\n%{http_code}' "$SRV/tokenize" -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" -d '{"model":"not-a-served-model","prompt":"x"}')
     TOK_CODE=${TOK_R##*$'\n'}; TOK_BODY=${TOK_R%$'\n'*}
-    [ "$TOK_CODE" = 404 ] && printf '%s' "$TOK_BODY" | grep -q "Served models" \
+    [ "$TOK_CODE" = 404 ] && printf '%s' "$TOK_BODY" | grep -q "Valid aliases" \
       && ok "unknown model name -> 404 whose body lists the served names" \
-      || graded serve-404-served-names entrypoints/serve/engine/serving.py "Served models:" \
-           "unknown model name -> $TOK_CODE, body lists nothing usable: $(printf '%s' "$TOK_BODY" | head -c 120)"
+      || fail "unknown model name -> $TOK_CODE, body lists nothing usable: $(printf '%s' "$TOK_BODY" | head -c 120)"
     if [ -n "$KEY" ]; then
       TOK_CODE=$(curl -s -o /dev/null -w '%{http_code}' "$SRV/tokenize" -H "Content-Type: application/json" -d "{\"model\":\"qwen3.8-27b\",\"prompt\":\"$TOKP\",\"add_special_tokens\":false}")
       [ "$TOK_CODE" = 401 ] \

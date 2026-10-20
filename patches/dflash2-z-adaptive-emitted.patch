@@ -1,17 +1,17 @@
 Kind: fix
 What: adaptive z counts emitted tokens, not sampling slots
 Upstream: none yet
-Cut-against: 0.31.0
+Cut-against: 0.32.0
 Retires-when: upstream PR
 
---- exported from a033efb91 (dflash2-z-adaptive-emitted); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from 7f5eee8fc (dflash2-z-adaptive-emitted); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/v1/worker/gpu/spec_decode/dflash/speculator.py b/v1/worker/gpu/spec_decode/dflash/speculator.py
-index c12bfd241..fd974cf22 100644
+index d95dcc16e..bea571469 100644
 --- a/v1/worker/gpu/spec_decode/dflash/speculator.py
 +++ b/v1/worker/gpu/spec_decode/dflash/speculator.py
-@@ -391,11 +391,12 @@
-         is_profile: bool = False,
+@@ -398,11 +398,12 @@
+         num_speculative_tokens: int | None = None,
      ) -> torch.Tensor:
          num_reqs = input_batch.num_reqs
 -        # What the step that just ran actually produced per request: num_sampled counts the

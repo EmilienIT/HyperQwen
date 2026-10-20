@@ -26,7 +26,7 @@ git clone https://github.com/syv-ai/HyperQwen ~/qwen-serving
 cd ~/qwen-serving
 
 python3 -m venv venv
-venv/bin/pip install vllm==0.31.0 huggingface_hub hf_transfer ninja \
+venv/bin/pip install vllm==0.32.0 huggingface_hub hf_transfer ninja \
   --extra-index-url https://flashinfer.ai/whl/ flashinfer-cubin==0.7.0.post1 pandas \
   nvidia-cuda-nvcc==13.0.88 nvidia-cuda-crt==13.0.88 nvidia-cuda-cccl==13.0.85 nvidia-nvvm==13.0.88
 # The four nvidia-* pins hold the CUDA 13 compiler at the runtime's 13.0 (see "Any
@@ -36,17 +36,19 @@ venv/bin/pip install vllm==0.31.0 huggingface_hub hf_transfer ninja \
 # bench/prefill_ab.sh's decode guard dies with "Please install vllm[bench] for
 # bench support" after the prefill rows have already run.
 # flashinfer-python is NOT listed above on purpose: the vllm wheel pins it exactly
-# (Requires-Dist: flashinfer-python==0.7.0.post1 on 0.31.0, ==0.6.18.post1 on 0.30.0,
-# ==0.6.18 on 0.29.0), so
+# (Requires-Dist: flashinfer-python==0.7.0.post1 on 0.32.0 and 0.31.0, ==0.6.18.post1 on
+# 0.30.0, ==0.6.18 on 0.29.0), so
 # naming it here can only fight that pin. Do not downgrade it to fix a cubin version
 # mismatch: that drags torch back and breaks vLLM's C extension.
 #
 # flashinfer-cubin ships prebuilt kernels so they do not have to JIT. It is NOT on
-# PyPI past 0.6.13 -- upstream's own requirements/cuda.txt says "not on PyPI since
-# 0.6.14" and pins it from https://flashinfer.ai/whl/, which is why the extra index
-# is above and why `pip index versions flashinfer-cubin` alone reports 0.6.13 as the
-# latest. With the versions matched, FLASHINFER_DISABLE_VERSION_CHECK=1 is no longer
-# needed; the launchers still export it, harmlessly.
+# PyPI past 0.6.13 (upstream's requirements/cuda.txt said "not on PyPI since 0.6.14"
+# and pinned it from https://flashinfer.ai/whl/), which is why the extra index is above
+# and why `pip index versions flashinfer-cubin` alone reports 0.6.13 as the latest.
+# vLLM 0.32.0 dropped that pin in favour of `vllm download-kernels` (vllm #58765), so
+# the version here is flashinfer-python's: the two must match exactly. With the
+# versions matched, FLASHINFER_DISABLE_VERSION_CHECK=1 is no longer needed; the
+# launchers still export it, harmlessly.
 # Cost to know before you install it: the 0.6.18 cubin package is ~6.3 GB unpacked
 # (85,496 files). The Docker image deliberately does NOT carry it: the image ships
 # nvcc 13.0.88, which satisfies the equality rule below, and 6.3 GB on a 9.5 GB image
@@ -113,7 +115,7 @@ venv/bin/python prepare/fetch_dflash2.py
 venv/bin/python prepare/fetch_thirdparty.py
 venv/bin/python prepare/quant_heads_stream.py models/Qwen3.8-27B-Uncensored-W4A16
 
-# patch vllm (all compatible patches are written against 0.31.0; reapply after upgrades).
+# patch vllm (all compatible patches are written against 0.32.0; reapply after upgrades).
 # patches/apply.sh applies patches/series in order, with --fuzz 0, and stops at the first
 # patch that does not apply, by name. The order matters: a few patches carry hunk context
 # that an earlier patch adds. A new independent patch goes on the last line of

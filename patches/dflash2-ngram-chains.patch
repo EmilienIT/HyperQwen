@@ -5,12 +5,10 @@ num_tokens_across_dp from the base.
 Kind: feature
 What: quantized candidate chains for the drafter; `propose` override
 Upstream: none
-Cut-against: 0.31.0: follows CandidateSampler's members; the context-parallel arguments as in #261
-  (the CP size now read from dcp_size, #56723), and prepare_context_anchor after the hidden-states
-  copy (#57934)
+Cut-against: 0.32.0
 Retires-when: upstreamed
 
---- exported from e7f63cc76 (dflash2-ngram-chains); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from 38b2e2506 (dflash2-ngram-chains); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/v1/worker/gpu/spec_decode/dflash2/speculator.py b/v1/worker/gpu/spec_decode/dflash2/speculator.py
 index 2121031ed..db7379415 100644
