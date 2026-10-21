@@ -36,16 +36,19 @@ none, and the `.sh` scripts ask `/v1/models`. The `.sh` measurements take `PORT`
 | file | kind | needs | exit | what it does |
 |---|---|---|---|---|
 | `act_calib.py` | measurement | GPU, model | 0 | Error that int8 activations add to each linear layer. Picks `INT8_LAYERS`. |
+| `test_doctor.py` | test | CPU, bash | 0 or 1 | Doctor health failures, configuration-pipeline failures and redacted output. |
 | `api_smoke.py` | smoke test, run by hand | server | 0 if all 12 features pass, 2 if no request reaches a server, else 1 | Request-level API features: logprobs, n, stop, seeds, structured output, penalties, streaming, thinking. |
 | `bugb_sweep.py` | reproducer | server, model | 0, or 1 if a length is broken | The prompt lengths you give, against the broken-length defect (gotcha 37). |
 | `conc_ladder.py` | measurement | server | 0 | Decode tok/s per stream at N=1..8, with passes, preemptions and KV occupancy. `--salt S` fixes the prompts across boots for an A/B. |
 | `concurrent_collapse.py` | reproducer | server | 0, or 1 if a trial collapsed or a request errored | The "!!!!" collapse from #208. |
 | `demo/` | demo | Node | n/a | The canvas renderer for the README video. See `demo/README.md`. |
-| `demo_capture.py` | demo | server | 0 | Records one lane of the demo video: each token and the time it arrived. |
+| `demo_capture.py` | demo | server, frozen LABD corpus | 0, 2 if the corpus is missing, blank or too short | Records one lane of the demo video: each token and the time it arrived. |
+| `test_demo_corpus.py` | test | CPU | 0 or 1 | The demo rejects invalid corpora before requests and sends the frozen document to the copy task. |
 | `harness.py` | library | CPU | n/a | How the scripts reach the server: the key, the URL, the model, the request, the stream and `/metrics`. For the bash scripts, `python3 bench/harness.py spec` prints the drafts and accepted-token counters and `model` the served name. |
 | `interleave_dose.py` | measurement | server | 0 | Prefix reuse against a dose of interleaved traffic, with the single-conversation control. |
 | `labd_accept.py` | measurement | server | 0, or 1 if the server ignores `return_tokens_as_token_ids` | Teacher-forced tokens per step for lookup-augmented drafting. |
 | `labd_bench.py` | measurement | server | 0 | Six long-context greedy tasks: decode speed and tokens per step. |
+| `labd_corpus.py` | library | CPU | | Reuses the frozen LABD corpus, or builds it from this checkout's documentation on first run. |
 | `labd_soak.py` | test | server | 0 or 1 | The long verify block at batch > 1. |
 | `make_long_corpus.py` | data tool | `~/bench/labd_corpus.txt`, vLLM source | 0, or 1 if an input is missing | Builds the long-context LABD corpus. |
 | `test_long_corpus.py` | test | CPU | 0 or 1 | Active vLLM source discovery without importing it, and byte-preserved frozen corpus heads. |
@@ -69,22 +72,28 @@ none, and the `.sh` scripts ask `/v1/models`. The `.sh` measurements take `PORT`
 | `t4_battery.py` | driver, run by hand | GPU, server (it boots its own), model, `bench/quality-data/`, both LABD corpora | 0 if every bar passes (also with one arm, where the cross-arm bars are n/a), 1 if a bar fails, 2 if a bar had no data | The T4 battery (#153): `SPEC=dflash2 CTX=long` int8 + Triton against `FA2_FP8KV=1` (`--arms int8,fp8fa2`, the default) and the `PTH_FA=1` int8 kernel arm (`--arms int8,pth`: the same bars against int8, soak on pth), with quality, residue (cold boot), decode at ~60k and ~90k (opt-in ~149k) and a soak, on each boot's server identity (any PID or EngineCore change, or a death line in the log, fails the cell). `--help` lists the bars; `--dry-run` prints the plan and needs no GPU. |
 | `test_bench_sse_keepalive.py` | test | image | 0 or 1 | `vllm bench serve` against a server that sends an SSE keep-alive. |
 | `test_conc_ladder_salt.py` | test | CPU | 0 or 1 | `conc_ladder.py --salt` against a stub server: the same prompts on a second run, and the prefix-cache hit reported. |
-| `test_harness.py` | test | CPU, bash | 0 or 1 | `harness.py` against a stub server. Its key chain is checked against `resolve_api_key.sh`. |
+| `test_chat_hardening.py` | test | CPU | 0 or 1 | Explicit/default template scope, path deduplication and help without writes. |
+| `test_harness.py` | test | CPU, bash | 0 or 1 | `harness.py` against a stub server, including refusal of SSE streams closed before `[DONE]`. Its key chain is checked against `resolve_api_key.sh`. |
 | `test_kv_cache_seat_budget.py` | test | image | 0 or 1 | The KV cache seat budget line (`kv-cache-seat-budget.patch`) against five measured boots, with vLLM's own spec classes. |
 | `test_kvarn_recycled_pages.py` | test | image | 0 or 1 | KVarN's recycled-page drop (#208). |
 | `test_labd_bench_clock.py` | test | CPU | 0 or 1 | `labd_bench.py` against a stub server, with the wall clock stepped back: TTFT and decode rate as the stub served them. |
+| `test_labd_corpus.py` | test | CPU | 0 or 1 | Both LABD scripts on a fresh checkout and an existing frozen corpus; missing documentation and relative corpus paths. |
 | `test_lookup_kernels.py` | kernel test | GPU | 0 or 1 | The LABD kernels against a Python reference. |
 | `test_marlin_int8_asym.py` | kernel test | GPU | 0 or 1 | Marlin W4A8-INT8 with zero points against W4A16. |
 | `test_model_verification.py` | test | CPU | 0 or 1 | Model verification and selection. Cuts a heredoc out of `verify.sh`. |
+| `test_pin_bump.py` | test | CPU, git | 0 or 1 | Missing-pattern and incompatible-pin rejection without partial edits; valid bumps and dry runs. |
 | `test_no_key_bind.sh` | test | CPU, bash, tar | 0 or 1. Skips under `/.dockerenv`. | The `--host` each launcher binds, with and without a key (#204). Cuts a block out of `verify.sh` and evaluates it. |
 | `test_prefill_attn_bigpool.py` | kernel test | GPU | 0 or 1 | int32 overflow in the int8 prefill kernel on a large pool (#86). |
 | `test_prepare_crash.py` | test | torch and the prepare stack | 0 or 1 | Crash injection for the model preparation scripts (#195). Cuts a heredoc out of `docker/prepare.sh`. |
 | `test_prepare_state.py` | test | CPU | 0 or 1 | `state()` in `docker/prepare.sh` on torn files (#195). Cuts a heredoc out of `docker/prepare.sh`. |
+| `test_port_paths.py` | test | CPU, bash, git | 0 or 1 | Export, port drift and triage against a real checkout with spaces in its path. |
 | `test_quant_schema.py` | test | torch and the prepare stack | 0 or 1 | What `prepare/quant_schema.py` writes for every in-place quant script: the packed tensors and their scale dtype, the killed-run check, the index entries, the config group. |
+| `test_generation_state.py` | test | CPU | 0 or 1 | Generation resume after torn JSON/UTF-8 tails, missing final newlines and internal corruption. |
 | `test_spec_decode_attn.py` | kernel test | GPU | 0 or 1 | The split-KV spec-decode attention against a reference. The timing rows are informational. |
 | `test_spec_decode_bigpool.py` | kernel test | GPU | 0 or 1. The fp8 part skips below sm89 or without the fp8 path. | int32 overflow in `_spec_attn_partial` on a large pool (#86). |
 | `test_spec_decode_fp8.py` | kernel test | GPU, sm89+ | 0 or 1. Skips below sm89 or without the fp8 path. | The fp8 path of the split-KV kernel. The timing rows are informational. |
 | `test_t4_battery.py` | test | CPU, bash | 0 or 1 | `t4_battery.py`'s dry-run plan, parsers, restart gate (on a fake `/proc`), verdict, and one run against a stub launcher. |
+| `test_vision_knobs.py` | test | CPU, bash | 0 or 1 | All three launchers' Vision limits, CPU tower-offload budget and boolean controls against a stub vLLM. |
 | `tune_gdn.py` | measurement | GPU | 0 | The Gated DeltaNet decode kernel over block sizes and warp counts. |
 | `verbatim.py` | library and test | CPU | 0 or 1 | How much of an answer copies its source. The two sweeps use it. Run alone, it tests itself. |
 | `warmup.sh` | lifecycle | server | 0 or 1 | Warms the serving path after boot. `single-user/qwen-server.sh` runs it when `WARMUP=1`. |
