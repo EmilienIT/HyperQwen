@@ -137,7 +137,7 @@ happens when the streams are big. Where it is *not* the better choice:
   ([docs/long-context.md](../docs/long-context.md#dflash2-at-240k-ctxhuge-kvarn-also-combines-with-specdflash2));
   any other `CTX` falls back to MTP with a message. `CTX=long` doubles the context — 138,696 tokens at `DFLASH_TOKENS=7`,
   114,224 at 15 — by moving to an `int8_per_token_head` cache on the Triton backend
-  (`FA2_FP8KV=0`; the default is now fp8 KV on the `fa2/` FlashAttention-2 plugin, see the knob table); it is
+  (`FA2_FP8KV=0`; on a compute capability 8.6 GPU the default is now the same cache read by the pth-flash-attn kernel (`PTH_FA`), or else fp8 KV on the `fa2/` FlashAttention-2 plugin, see the knob table); it is
   worth it only for context reproduction, and `SPEC=mtp CTX=long` beats it about 2:1 on
   everything else. See [docs/long-context.md](../docs/long-context.md#dflash2-past-64k-specdflash2-ctxlong).
 - The V2 runner rejected the `thinking_token_budget` request parameter (HTTP
@@ -328,7 +328,8 @@ bug is in the FlashInfer spec-decode path. Hence two configs:
 - `CTX=fast` (default): FlashAttention, bf16 KV, **~64k context**, k=4, split-KV
   verify attention → ~114 / ~124 tok/s with the fast variant
 - `CTX=long`: FlashInfer, fp8 KV, **150k context**, k=3 → 95 / 100 tok/s with
-  the fast variant (84 / 89 with the base requantization)
+  the fast variant (84 / 89 with the base requantization); these are the fp8 + FlashInfer arm's numbers. On a compute capability 8.6 GPU
+  with `pthfa/` installed the default is int8 KV on the pth-flash-attn kernel instead (`PTH_FA`; `PTH_FA=0` restores this arm).
 
 k=3 passed every concurrency soak we ran (C2/C4/C8 with staggered finishes,
 100k-token prompt, 4×6k-token generations); if you see the crash anyway,
@@ -425,6 +426,12 @@ against a remote server using `VLLM_API` and the usual client key. This is an im
 round-trip check, not a Vision quality benchmark.
 
 ## Knobs
+
+All three launchers share the Vision controls: `VISION` and `VISION_OFFLOAD` accept
+only `0` or `1` (empty uses the default). `VISION=1` limits images to one per prompt
+and enables CPU tower offload, including in `alternative.sh`. `VISION_OFFLOAD=0`
+forces the offload budget to zero even if `VLLM_VISION_CPU_OFFLOAD_GB` was inherited;
+otherwise that variable sets the budget. `EXTRA_ARGS` can override image limits.
 
 | var | default | notes |
 |---|---|---|

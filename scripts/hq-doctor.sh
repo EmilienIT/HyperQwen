@@ -8,7 +8,7 @@
 # Checks, in order: effective config (resolve_config.sh), GPU, port occupant,
 # /health, last server error in logs. Exit 0 = server healthy, 1 = not (or
 # no server), 2 = script environment problem.
-set -u
+set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(dirname "$HERE")"
 RC=0
@@ -30,7 +30,7 @@ if grep -q '^VLLM_API_KEY=.\+' "$REPO/.env" 2>/dev/null; then
   LEN=$(grep '^VLLM_API_KEY=' "$REPO/.env" | tail -1 | cut -d= -f2 | wc -c)
   say "  VLLM_API_KEY: set (~$((LEN - 1)) chars, value not shown)"
 else
-  warn "VLLM_API_KEY unset: server binds 0.0.0.0 with NO auth (make keygen before exposing)"
+  warn "no VLLM_API_KEY entry in .env (the exported environment or api_key.txt may still supply one)"
 fi
 
 say "== gpu"
@@ -53,7 +53,7 @@ else
 fi
 
 say "== health"
-CODE=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/health" 2>/dev/null || echo 000)
+CODE=$(curl -s --connect-timeout 5 --max-time 10 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/health" 2>/dev/null) || CODE=000
 say "  GET /health -> HTTP $CODE"
 if [ "$CODE" = 200 ]; then
   say "  healthy (note: /health 200 can precede first-prompt readiness by ~1 min on a cold boot)"
