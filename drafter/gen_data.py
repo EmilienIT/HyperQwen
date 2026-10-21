@@ -9,7 +9,7 @@ import json, os, sys, time
 HERE = os.path.dirname(os.path.abspath(__file__)); REPO = os.path.dirname(HERE)
 from transformers import AutoTokenizer
 from vllm import LLM, SamplingParams
-from generation_state import load_completed
+from generation_state import load_completed, exclusive_output, OutputLockedError
 
 MODEL = os.environ.get("MODEL", os.path.join(REPO, "models", "Qwen3.8-27B-W4A16-AutoRound"))
 D = os.path.join(HERE, "data")
@@ -20,11 +20,19 @@ MAX_NOTHINK = int(os.environ.get("MAX_NOTHINK", 1024))
 
 
 def main():
+    out_path = f"{D}/gen.jsonl"
+    try:
+        with exclusive_output(out_path):
+            generate(out_path)
+    except OutputLockedError as exc:
+        sys.exit(str(exc))
+
+
+def generate(out_path):
     tok = AutoTokenizer.from_pretrained(MODEL)
     prompts = [json.loads(l) for l in open(f"{D}/prompts.jsonl")]
     if LIMIT:
         prompts = prompts[:LIMIT]
-    out_path = f"{D}/gen.jsonl"
     done = load_completed(out_path)
     todo = [p for p in prompts if p["id"] not in done]
     print(f"{len(prompts)} prompts, {len(done)} done, {len(todo)} to go", flush=True)
