@@ -94,7 +94,7 @@ Things that each cost us hours, in rough order of pain. Worth skimming before yo
    8192` inflates the profiled activation peak, which shrinks the cache pool,
    which caps concurrency. 2048 wins on this card.
 8. **`--language-model-only` drops the vision tower cleanly** (no weights
-   loaded), and it is the default in both start scripts. `VISION=1` keeps the
+   loaded), and it is the default in all three launchers. `VISION=1` keeps the
    tower for a client that sends images. The tower is **0.858 GiB**, not the
    2.7 GB this entry used to give: `model.visual.*` sums to 0.858 GiB of BF16 in both
    `Qwen3.8-27B-W4A16-AutoRound` and the `-fast` variant, and a runtime A/B
