@@ -47,6 +47,8 @@ jobs:
         run: bash bench/test_tp_size.sh
       - name: Check each launcher refuses a boolean knob that is neither 0 nor 1 (#310)
         run: bash bench/test_bool_knobs.sh
+      - name: Check Vision limits, tower offload and boolean controls in every launcher without a GPU
+        run: python bench/test_vision_knobs.py
       - name: Check the dflash2 seat note against the measured pools and resident counts
         run: bash bench/test_resident_print.sh
       - name: Check FA2_FP8KV selects fp8 on FLASH_ATTN only on SPEC=dflash2 CTX=long and refuses the rest

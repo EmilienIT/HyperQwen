@@ -87,6 +87,7 @@ none, and the `.sh` scripts ask `/v1/models`. The `.sh` measurements take `PORT`
 | `test_spec_decode_bigpool.py` | kernel test | GPU | 0 or 1. The fp8 part skips below sm89 or without the fp8 path. | int32 overflow in `_spec_attn_partial` on a large pool (#86). |
 | `test_spec_decode_fp8.py` | kernel test | GPU, sm89+ | 0 or 1. Skips below sm89 or without the fp8 path. | The fp8 path of the split-KV kernel. The timing rows are informational. |
 | `test_t4_battery.py` | test | CPU, bash | 0 or 1 | `t4_battery.py`'s dry-run plan, parsers, restart gate (on a fake `/proc`), verdict, and one run against a stub launcher. |
+| `test_vision_knobs.py` | test | CPU, bash | 0 or 1 | All three launchers' Vision limits, CPU tower-offload budget and boolean controls against a stub vLLM. |
 | `tune_gdn.py` | measurement | GPU | 0 | The Gated DeltaNet decode kernel over block sizes and warp counts. |
 | `verbatim.py` | library and test | CPU | 0 or 1 | How much of an answer copies its source. The two sweeps use it. Run alone, it tests itself. |
 | `warmup.sh` | lifecycle | server | 0 or 1 | Warms the serving path after boot. `single-user/qwen-server.sh` runs it when `WARMUP=1`. |

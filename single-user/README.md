@@ -422,6 +422,12 @@ included (`tools` + `tool_choice: "auto"` come back as `tool_calls`).
 
 ## Knobs
 
+All three launchers share the Vision controls: `VISION` and `VISION_OFFLOAD` accept
+only `0` or `1` (empty uses the default). `VISION=1` limits images to one per prompt
+and enables CPU tower offload, including in `alternative.sh`. `VISION_OFFLOAD=0`
+forces the offload budget to zero even if `VLLM_VISION_CPU_OFFLOAD_GB` was inherited;
+otherwise that variable sets the budget. `EXTRA_ARGS` can override image limits.
+
 | var | default | notes |
 |---|---|---|
 | `MODEL` | `models/Qwen3.8-27B-W4A16-AutoRound-fast` if present, else the base dir | the fast variant (`prepare/fetch_fast_variant.py`) is +15% |
