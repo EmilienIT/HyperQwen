@@ -35,7 +35,7 @@
 #                       QWEN_BOOL_KNOBS lists them; bench/test_bool_knobs.sh checks that the
 #                       list matches what the patches register, plus FA2_FP8KV, which the
 #                       fa2/ plugin reads (not a patch). The launcher controls VISION and
-#                       VISION_OFFLOAD are validated alongside that list.
+#                       VISION_OFFLOAD, LOOKUP, INT4_MQ_3D, TOOLS and EMBED_UVA are validated alongside it.
 #
 #   qwen_fa2_fp8kv_single_only  <launcher>, for the launchers that have no FA2 arm (batch,
 #                       alternative.sh). Refuses FA2_FP8KV=1: the variable is also the plugin's
@@ -141,7 +141,7 @@ QWEN_BOOL_KNOBS="KVARN_DBG_LAYERS KVARN_FAST_FLUSH KVARN_FP16_DEQUANT KVARN_FUSE
 
 qwen_check_bool_knobs() {
   local k v bad=0
-  for k in $QWEN_BOOL_KNOBS VISION VISION_OFFLOAD; do
+  for k in $QWEN_BOOL_KNOBS VISION VISION_OFFLOAD LOOKUP INT4_MQ_3D TOOLS EMBED_UVA; do
     v=${!k-}
     case "$v" in
       ""|0|1) ;;
@@ -152,6 +152,11 @@ qwen_check_bool_knobs() {
 }
 
 qwen_vision_args() {
+  # Keep --language-model-only explicit. Enable Vision with VISION=1, not by
+  # countering it with --no-language-model-only in EXTRA_ARGS: that accepts images
+  # and counts their tokens but silently answers from placeholder embeddings.
+  # vLLM profiles the encoder at the largest accepted image; that peak is deducted
+  # from the KV pool. The 2,097,152-pixel cap limits it to 2048 image tokens.
   VISION_ARGS=(--language-model-only)
   if [ "${VISION:-0}" = 1 ]; then
     VISION_ARGS=(--limit-mm-per-prompt '{"image":{"count":1}}'

@@ -108,5 +108,15 @@ class VisionTests(unittest.TestCase):
                 self.assertEqual(values[-1], limits)
 
 
+    def test_launcher_alias_boolean_typos_are_rejected(self):
+        for launcher in LAUNCHERS:
+            for knob in ("LOOKUP", "INT4_MQ_3D", "TOOLS", "EMBED_UVA"):
+                with self.subTest(launcher=launcher, knob=knob):
+                    result = self.run_launcher(launcher, **{knob: "true"})
+                    self.assertEqual(result.returncode, 1, result.stderr)
+                    self.assertIn(f"{knob}=true", result.stderr)
+                    self.assertEqual(result.stdout, "")
+
+
 if __name__ == "__main__":
     unittest.main()
