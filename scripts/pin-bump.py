@@ -10,7 +10,8 @@ What it changes (and only this; narrative docs that describe a past pin are left
   - Dockerfile               the header comment's "vLLM <old>"
   - kvarn/install.sh         the "vLLM <old> venv" comment
   - docs/install.md          the `pip install vllm==<old>` line, the patches' "written against", and
-                             flashinfer-cubin==<x>, read from vLLM's own requirements/cuda.txt at the NEW tag
+                             flashinfer-cubin==<x>, read from the cubin pin or matching flashinfer-python pin
+                             in vLLM's own requirements/cuda.txt at the NEW tag
     (the cubin package is not on PyPI and must match flashinfer-python exactly; 0.30.0 moved it to 0.6.18.post1)
 Every file it touches is listed with its line count changed; anything it expected and did not find is an error.
 """
@@ -23,10 +24,13 @@ sys.stdout.reconfigure(encoding="utf-8")
 def flashinfer_at(fork, tag):
     txt = subprocess.run(["git", "-C", fork, "show", f"{tag}:requirements/cuda.txt"], capture_output=True, text=True,
                          encoding="utf-8").stdout
-    m = re.search(r"^flashinfer-cubin==(\S+)", txt, re.M)
-    if not m:
-        sys.exit(f"no flashinfer-cubin pin in {tag}:requirements/cuda.txt")
-    return m.group(1)
+    pins = dict(re.findall(r"^flashinfer-(cubin|python)\s*==\s*(\S+)", txt, re.M))
+    # v0.32 no longer carries a separate cubin requirement. This project's cubin
+    # install must still match flashinfer-python; prefer an explicit cubin pin.
+    pin = pins.get("cubin") or pins.get("python")
+    if pin is None:
+        sys.exit(f"no flashinfer-cubin or flashinfer-python pin in {tag}:requirements/cuda.txt")
+    return pin
 
 
 def main():
@@ -111,6 +115,8 @@ def main():
         if bad:
             print(f"  CO-PIN   docker/requirements.txt {name}=={pinned} violates vLLM {new}'s {name}{op}{want}"); errors += 1
     print(f"pin-bump {old} -> {new}; flashinfer-cubin {fi_old} -> {fi_new}; {errors} problem(s)")
+    if errors:
+        print("nothing written (validation failed)")
     if not errors and not a.dry_run:
         for path, data in pending.items():
             path.write_bytes(data)

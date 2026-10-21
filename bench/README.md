@@ -82,8 +82,8 @@ none, and the `.sh` scripts ask `/v1/models`. The `.sh` measurements take `PORT`
 | `test_lookup_kernels.py` | kernel test | GPU | 0 or 1 | The LABD kernels against a Python reference. |
 | `test_marlin_int8_asym.py` | kernel test | GPU | 0 or 1 | Marlin W4A8-INT8 with zero points against W4A16. |
 | `test_model_verification.py` | test | CPU | 0 or 1 | Model verification and selection. Cuts a heredoc out of `verify.sh`. |
-| `test_pin_bump.py` | test | CPU, git | 0 or 1 | Missing-pattern and incompatible-pin rejection without partial edits; valid bumps and dry runs. |
 | `test_no_key_bind.sh` | test | CPU, bash, tar | 0 or 1. Skips under `/.dockerenv`. | The `--host` each launcher binds, with and without a key (#204). Cuts a block out of `verify.sh` and evaluates it. |
+| `test_pin_bump.py` | test | CPU, git | 0 or 1 | Missing-pattern/co-pin rejection without partial edits; every target updated on valid bumps, future repo pins, Python-only FlashInfer pin and dry runs. |
 | `test_prefill_attn_bigpool.py` | kernel test | GPU | 0 or 1 | int32 overflow in the int8 prefill kernel on a large pool (#86). |
 | `test_prepare_crash.py` | test | torch and the prepare stack | 0 or 1 | Crash injection for the model preparation scripts (#195). Cuts a heredoc out of `docker/prepare.sh`. |
 | `test_prepare_state.py` | test | CPU | 0 or 1 | `state()` in `docker/prepare.sh` on torn files (#195). Cuts a heredoc out of `docker/prepare.sh`. |
