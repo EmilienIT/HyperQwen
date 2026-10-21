@@ -164,6 +164,22 @@ class StreamTests(unittest.TestCase):
         self.assertEqual((seen[0]["path"], seen[0]["auth"], seen[0]["body"]),
                          ("/v1/chat/completions", "Bearer k", {"stream": True}))
 
+    def test_eof_before_done_is_an_error(self):
+        cases = (
+            b"",
+            b": keep-alive\n\n",
+            b'data: {"choices": [{"delta": {"content": "partial"}}]}\n\n',
+            SSE.split(b"data: [DONE]", 1)[0],
+        )
+        for body in cases:
+            with self.subTest(body=body), stub(body):
+                with self.assertRaisesRegex(ConnectionError, r"before \[DONE\]"):
+                    list(harness.stream("/v1/chat/completions", {"stream": True}, timeout=10))
+
+    def test_done_without_content_is_complete(self):
+        with stub(b"data: [DONE]\n\n"):
+            self.assertEqual(list(harness.stream("/v1/completions", {"stream": True}, timeout=10)), [])
+
 
 # What vLLM's prometheus_client writes for two engines: <name>_total and <name>_created per label set, with
 # the accepted counter ahead of the drafts counter, so a reader that goes by line order gets them swapped.
