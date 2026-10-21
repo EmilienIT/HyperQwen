@@ -39,6 +39,7 @@ none, and the `.sh` scripts ask `/v1/models`. The `.sh` measurements take `PORT`
 | `test_doctor.py` | test | CPU, bash | 0 or 1 | Doctor health failures, configuration-pipeline failures and redacted output. |
 | `api_smoke.py` | smoke test, run by hand | server | 0 if all 12 features pass, 2 if no request reaches a server, else 1 | Request-level API features: logprobs, n, stop, seeds, structured output, penalties, streaming, thinking. |
 | `bugb_sweep.py` | reproducer | server, model | 0, or 1 if a length is broken | The prompt lengths you give, against the broken-length defect (gotcha 37). |
+| `code_corpus.py` | library | CPU | n/a | Source selection for quality, calibration and long LABD corpora; see `CODE_CORPUS_DIR` below. |
 | `conc_ladder.py` | measurement | server | 0 | Decode tok/s per stream at N=1..8, with passes, preemptions and KV occupancy. `--salt S` fixes the prompts across boots for an A/B. |
 | `concurrent_collapse.py` | reproducer | server | 0, or 1 if a trial collapsed or a request errored | The "!!!!" collapse from #208. |
 | `demo/` | demo | Node | n/a | The canvas renderer for the README video. See `demo/README.md`. |
@@ -61,7 +62,7 @@ none, and the `.sh` scripts ask `/v1/models`. The `.sh` measurements take `PORT`
 | `prefill_ab.sh` | measurement | GPU, model | 0, or 1 if it cannot start its server | Boots a server with an env set and measures the prefill rows. |
 | `prefix_alternation.py` | reproducer | server | 0, 1 if the arm reproduces the defect, or 2 if it checked no turn | Prefix reuse under two alternating conversations. |
 | `prompts_real.jsonl` | data | | | The realistic prompts that `run_benchmarks.sh`, `real_rep.sh`, `prefill_ab.sh` and `act_calib.py` read. |
-| `quality_battery.py` | quality measurement | server, `bench/quality-data/` | 0 | Perplexity on three corpora and GSM8K accuracy. |
+| `quality_battery.py` | quality measurement | server, `bench/quality-data/`, code source for PPL | 0, or 1 if an input is missing | Perplexity on three corpora and GSM8K accuracy. PPL requires a code source selected by `CODE_CORPUS_DIR` / checkout venv / active-install fallback; `--gsm-only` does not need vLLM locally. |
 | `real_rep.sh` | measurement | server, model | the last repeat's exit | The C1 row of `run_benchmarks.sh`, repeated. |
 | `replay_offload_serve.py` | reproducer | server with an offload tier | 0 if SERVED, 1 if NOT-SERVED, 2 if invalid (missing corpus/metrics, counter reset, tier overflow, request failure or X not evicted) | Whether a fast replay loads bytes from the CPU offload tier. A fast replay without loaded bytes is `INVALID-NOT-EVICTED`: adjust the pool/evictors before drawing a conclusion. |
 | `residue_sweep.py` | reproducer | server, model | 0, or 1 if a residue is broken | One prompt for each length residue mod 128. |
@@ -77,6 +78,7 @@ none, and the `.sh` scripts ask `/v1/models`. The `.sh` measurements take `PORT`
 | `test_kvarn_recycled_pages.py` | test | image | 0 or 1 | KVarN's recycled-page drop (#208). |
 | `test_labd_bench_clock.py` | test | CPU | 0 or 1 | `labd_bench.py` against a stub server, with the wall clock stepped back: TTFT and decode rate as the stub served them. |
 | `test_labd_corpus.py` | test | CPU | 0 or 1 | Both LABD scripts on a fresh checkout and an existing frozen corpus; missing documentation and relative corpus paths. |
+| `test_long_corpus.py` | test | CPU | 0 or 1 | Explicit/checkout/fallback source selection without importing vLLM, missing-source/cohort refusals and byte-preserved frozen heads. |
 | `test_lookup_kernels.py` | kernel test | GPU | 0 or 1 | The LABD kernels against a Python reference. |
 | `test_marlin_int8_asym.py` | kernel test | GPU | 0 or 1 | Marlin W4A8-INT8 with zero points against W4A16. |
 | `test_model_verification.py` | test | CPU | 0 or 1 | Model verification and selection. Cuts a heredoc out of `verify.sh`. |
@@ -97,6 +99,16 @@ none, and the `.sh` scripts ask `/v1/models`. The `.sh` measurements take `PORT`
 | `tune_gdn.py` | measurement | GPU | 0 | The Gated DeltaNet decode kernel over block sizes and warp counts. |
 | `verbatim.py` | library and test | CPU | 0 or 1 | How much of an answer copies its source. The two sweeps use it. Run alone, it tests itself. |
 | `warmup.sh` | lifecycle | server | 0 or 1 | Warms the serving path after boot. `single-user/qwen-server.sh` runs it when `WARMUP=1`. |
+
+For comparable code scores, set `CODE_CORPUS_DIR` to the same fixed **vllm package
+directory** for every arm, for example `CODE_CORPUS_DIR=/path/to/fixed/vllm`.
+`quality_battery.py`, `make_long_corpus.py` and `act_calib.py` use that tree. Without
+an explicit selection, they prefer `<repo>/venv/lib/python3.12/site-packages/vllm`
+to preserve existing inputs, and discover the active Python's vLLM only when that
+directory is absent. The chosen directory and file/window counts are printed.
+An invalid explicit directory never falls back; missing source or eligible PPL
+windows is an error with instructions to set `CODE_CORPUS_DIR`. Use one immutable
+source tree for comparisons across vLLM versions. `--gsm-only` skips this selection.
 
 One test outside `bench/` gates CI too:
 
