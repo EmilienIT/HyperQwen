@@ -59,7 +59,7 @@ MARKER = "tool_call.arguments is mapping"
 
 def harden(path: str) -> str:
     """Return 'hardened', 'ok' or 'unchanged'."""
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         src = f.read()
     if MARKER in src:
         return "unchanged"
@@ -72,11 +72,13 @@ def harden(path: str) -> str:
 
 
 def targets():
+    if any(arg in ("--help", "-h") for arg in sys.argv[1:]):
+        print(__doc__)
+        sys.exit(0)
     for arg in sys.argv[1:]:
-        if arg in ("--help", "-h"):
-            print(__doc__)
-            sys.exit(0)
         yield arg
+    if sys.argv[1:]:
+        return
     base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     models = os.path.join(base, "models")
     if os.path.isdir(models):
@@ -91,11 +93,11 @@ def main() -> int:
     seen = set()
     for t in targets():
         p = os.path.realpath(t)
+        if os.path.isdir(p):
+            p = os.path.join(p, "chat_template.jinja")
         if p in seen:
             continue
         seen.add(p)
-        if os.path.isdir(t):
-            p = os.path.join(t, "chat_template.jinja")
         if not os.path.isfile(p):
             continue
         try:
