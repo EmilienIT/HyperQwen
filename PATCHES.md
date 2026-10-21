@@ -83,9 +83,9 @@ headers in the patch file (the files are the source) and run the script.
 <!-- table:end -->
 
 `pthfa/` is not in the table because it is not a patch: it is the source of a separate extension, the pth-flash-attn
-int8 per-token-head attention backend (`PTH_FA=1`, `docs/long-context.md`), which `pthfa/install.sh` builds and installs
+int8 per-token-head attention backend (`PTH_FA=1`, the default on a compute capability 8.6 GPU for `SPEC=mtp CTX=long` and `SPEC=dflash2 CTX=long`; `docs/long-context.md`), which `pthfa/install.sh` builds and installs
 into the venv beside vLLM as a plugin. No vLLM file changes, so the series and `patches/check_vllm_series.sh` are the
-same with or without it. `pthfa/PIN` names the commit it is vendored from; `pthfa/check_vendor.sh` checks the files.
+same with or without it. `pthfa/PIN` names the commit it is vendored from (a release tag of https://github.com/noon-at-cgn/pth-flash-attn); `pthfa/check_vendor.sh` checks the files.
 
 Retired at 0.30.0 and removed from the tree: `offload-mtp-serve` (vllm #52771, #52807 and #54288, all in 0.30.0) and `mamba-align-retire-null-gaps` (vllm #55450, in 0.30.0).
 
