@@ -17,9 +17,10 @@ G=(git -C "$FORK")
 "${G[@]}" config rerere.enabled true; "${G[@]}" config rerere.autoupdate true
 TMP_BASE=$(cd "${TMPDIR:-/tmp}" && pwd) || exit 2
 T=$(mktemp -d "$TMP_BASE/hq-port.XXXXXXXX") || exit 2
-case "$T" in "$TMP_BASE"/hq-port.*) ;; *) exit 2 ;; esac
-W="$T/w"; "${G[@]}" worktree add -q --detach "$W" "$NEW" || exit 2
+case "$T" in "$TMP_BASE"/hq-port.*) ;; *) echo "unsafe triage temp path: $T" >&2; exit 2 ;; esac
+W="$T/w"
 trap '"${G[@]}" worktree remove --force "$W" >/dev/null 2>&1; rm -rf "$T"' EXIT
+"${G[@]}" worktree add -q --detach "$W" "$NEW" || exit 2
 clean=0; conf=0; empty=0; rows=()
 for c in $("${G[@]}" rev-list --reverse "$OLD..$BR"); do
   subj=$("${G[@]}" log -1 --format=%s "$c"); topic=$(echo "$subj" | sed -nE 's/^\[qwen38\] ([A-Za-z0-9._-]+).*/\1/p'); topic=${topic:-$subj}
