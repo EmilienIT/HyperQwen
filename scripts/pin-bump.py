@@ -5,7 +5,7 @@
 
 What it changes (and only this; narrative docs that describe a past pin are left for a person):
   - docker/requirements.txt  vllm==<old>          -> vllm==<new>
-  - verify.sh                the version check, the kvarn patch names
+  - verify.sh                the version check (KVarN patch names now come from patches/apply.sh)
   - patches/apply.sh         the KVARN array's kvarn-*-<old>.patch names (the list lives here since syv-ai #242)
   - Dockerfile               the header comment's "vLLM <old>"
   - kvarn/install.sh         the "vLLM <old> venv" comment
@@ -45,8 +45,7 @@ def main():
     kv = (rf"\bkvarn-((?:[a-z0-9]+-)*){o}\.patch", rf"kvarn-\g<1>{new}.patch")
     edits = {
         "docker/requirements.txt": [(rf"^vllm=={o}(?=\r?$)", f"vllm=={new}"), (rf"# vllm=={o} ", f"# vllm=={new} ")],
-        "verify.sh": [(rf'\[ "\$VER" = "{o}" \]', f'[ "$VER" = "{new}" ]'), (rf"written against {o}\)", f"written against {new})"),
-                      kv],
+        "verify.sh": [(rf'\[ "\$VER" = "{o}" \]', f'[ "$VER" = "{new}" ]'), (rf"written against {o}\)", f"written against {new})")],
         "patches/apply.sh": [kv],
         "Dockerfile": [(rf"# vLLM {o} ", f"# vLLM {new} ")],
         "kvarn/install.sh": [(rf"vLLM {o} venv", f"vLLM {new} venv")],
@@ -58,6 +57,7 @@ def main():
                             (rf"flashinfer-cubin=={re.escape(fi_old)}(?![.\w])", f"flashinfer-cubin=={fi_new}")],
     }
     errors = 0
+    pending = {}
     for rel, subs in edits.items():
         p = root / rel
         s = p.read_bytes().decode("utf-8")  # bytes, not read_text: keep each file's own line endings
@@ -67,9 +67,9 @@ def main():
             if n == 0:
                 print(f"  MISSING  {rel}: /{pat}/"); errors += 1
             changed += n
-        if s != before and not a.dry_run:
-            p.write_bytes(s.encode("utf-8"))
-        print(f"  {'would edit' if a.dry_run else 'edited'} {rel}: {changed} replacement(s)")
+        if s != before:
+            pending[p] = s.encode("utf-8")
+        print(f"  {'would edit' if a.dry_run else 'planned'} {rel}: {changed} replacement(s)")
         # What is left of the old version in a file this touched is for a person to read: narrative ("on 0.29.0,
         # ==0.6.18") may be right, a missed pin is not. 2026-09-23: the cubin pin was bumped and the `pip install
         # vllm==0.29.0` two lines above it was not, and only a reader of the doc caught it.
@@ -111,6 +111,9 @@ def main():
         if bad:
             print(f"  CO-PIN   docker/requirements.txt {name}=={pinned} violates vLLM {new}'s {name}{op}{want}"); errors += 1
     print(f"pin-bump {old} -> {new}; flashinfer-cubin {fi_old} -> {fi_new}; {errors} problem(s)")
+    if not errors and not a.dry_run:
+        for path, data in pending.items():
+            path.write_bytes(data)
     sys.exit(1 if errors else 0)
 
 

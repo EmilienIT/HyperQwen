@@ -100,6 +100,8 @@ jobs:
         run: |
           python scripts/patches_md.py
           git diff --exit-code PATCHES.md || { echo "::error::PATCHES.md is not current: run python3 scripts/patches_md.py and commit the result"; exit 1; }
+      - name: Check invalid pin bumps leave the checkout unchanged
+        run: python bench/test_pin_bump.py
       - name: Check that a re-export keeps the file's preamble
         run: bash scripts/test_export_patch.sh
       - name: Check export and port tools with spaces in the vLLM checkout path
