@@ -63,8 +63,7 @@ none, and the `.sh` scripts ask `/v1/models`. The `.sh` measurements take `PORT`
 | `prompts_real.jsonl` | data | | | The realistic prompts that `run_benchmarks.sh`, `real_rep.sh`, `prefill_ab.sh` and `act_calib.py` read. |
 | `quality_battery.py` | quality measurement | server, `bench/quality-data/` | 0 | Perplexity on three corpora and GSM8K accuracy. |
 | `real_rep.sh` | measurement | server, model | the last repeat's exit | The C1 row of `run_benchmarks.sh`, repeated. |
-| `replay_offload_serve.py` | reproducer | server with an offload tier | 0 if SERVED, 1 if NOT-SERVED, 2 if the corpus/metrics are missing, counters reset or the tier overflows | Whether a fast replay loads bytes from the CPU offload tier. |
-| `test_replay_offload.py` | test | CPU | 0 or 1 | Replay verdicts on CPU stubs: GPU hits, actual load deltas, missing/reset counters and the legacy metric. |
+| `replay_offload_serve.py` | reproducer | server with an offload tier | 0 if SERVED, 1 if NOT-SERVED, 2 if invalid (missing corpus/metrics, counter reset, tier overflow, request failure or X not evicted) | Whether a fast replay loads bytes from the CPU offload tier. A fast replay without loaded bytes is `INVALID-NOT-EVICTED`: adjust the pool/evictors before drawing a conclusion. |
 | `residue_sweep.py` | reproducer | server, model | 0, or 1 if a residue is broken | One prompt for each length residue mod 128. |
 | `run_benchmarks.sh` | measurement | server, model | 0, or 1 if there is no server | The README numbers. |
 | `seat_ttft.py` | measurement | server | 0, or 2 if every request failed | Cold and warm TTFT at N=1. |
@@ -88,6 +87,7 @@ none, and the `.sh` scripts ask `/v1/models`. The `.sh` measurements take `PORT`
 | `test_prepare_state.py` | test | CPU | 0 or 1 | `state()` in `docker/prepare.sh` on torn files (#195). Cuts a heredoc out of `docker/prepare.sh`. |
 | `test_port_paths.py` | test | CPU, bash, git | 0 or 1 | Export, port drift and triage against a real checkout with spaces in its path. |
 | `test_quant_schema.py` | test | torch and the prepare stack | 0 or 1 | What `prepare/quant_schema.py` writes for every in-place quant script: the packed tensors and their scale dtype, the killed-run check, the index entries, the config group. |
+| `test_replay_offload.py` | test | CPU | 0 or 1 | Replay verdicts on CPU stubs: eviction, TTFT and byte deltas, fresh/legacy counters, exact metric families and interrupted requests. |
 | `test_generation_state.py` | test | CPU | 0 or 1 | Generation resume after torn JSON/UTF-8 tails, missing final newlines and internal corruption. |
 | `test_spec_decode_attn.py` | kernel test | GPU | 0 or 1 | The split-KV spec-decode attention against a reference. The timing rows are informational. |
 | `test_spec_decode_bigpool.py` | kernel test | GPU | 0 or 1. The fp8 part skips below sm89 or without the fp8 path. | int32 overflow in `_spec_attn_partial` on a large pool (#86). |

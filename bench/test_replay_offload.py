@@ -22,12 +22,15 @@ class Output(io.StringIO):
 
 
 class ReplayTests(unittest.TestCase):
-    def run_replay(self, growth, missing=False, legacy=False):
+    def run_replay(self, growth, missing=False, legacy=False, slow=False,
+                   appears=False, evict_growth=0, error=None, alias=True):
         requests = 0
 
         def stream(*args, **kwargs):
             nonlocal requests
             requests += 1
+            if requests == 3 and error is not None:
+                raise error
             yield {"choices": [{"delta": {"content": "ok"}}]}
             yield {"choices": [], "usage": {"prompt_tokens": 10, "completion_tokens": 2}}
 
@@ -35,7 +38,17 @@ class ReplayTests(unittest.TestCase):
             values = [("vllm:kv_offload_store_bytes_total", "", 0)]
             if not missing:
                 name, labels = ("vllm:kv_offload_total_bytes_total", '{transfer_type="CPU_to_GPU"}') if legacy else ("vllm:kv_offload_load_bytes_total", "")
-                values.append((name, labels, 500 + (growth if requests == 3 else 0)))
+                total = (0 if appears else 500) + (evict_growth if requests >= 2 else 0) + (growth if requests == 3 else 0)
+                if not appears or requests == 3:
+                    values.append((name, labels, total))
+                # Related metric families and the store direction must not count as loads.
+                values.extend([
+                    ("vllm:kv_offload_load_size_sum", "", total),
+                    ("vllm:kv_offload_load_time_seconds_total", "", requests),
+                    ("vllm:kv_offload_total_bytes_total", '{transfer_type="GPU_to_CPU"}', requests * 1000),
+                ])
+                if appears and alias:
+                    values.append(("vllm:kv_offload_total_bytes_total", '{transfer_type="CPU_to_GPU"}', total))
             return values
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -46,19 +59,48 @@ class ReplayTests(unittest.TestCase):
                     mock.patch.dict(os.environ, {"DEPTH_CORPUS_GLOB": str(corpus), "TIER_GIB": "0"}), \
                     mock.patch.object(harness, "stream", side_effect=stream), \
                     mock.patch.object(harness, "samples", side_effect=samples), \
-                    mock.patch("time.perf_counter", side_effect=[1, 11, 12, 20, 21, 22, 30, 31, 32]), \
-                    contextlib.redirect_stdout(out):
+                    mock.patch("time.perf_counter", side_effect=[1, 11, 12, 20, 21, 22, 30, 39 if slow else 31, 40]), \
+                    contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
                 with self.assertRaises(SystemExit) as result:
                     runpy.run_path(str(SCRIPT), run_name="__main__")
             return result.exception.code, json.loads(out.getvalue().splitlines()[-1])
 
     def test_fast_gpu_hit_is_not_evidence_of_cpu_offload(self):
         code, result = self.run_replay(0)
-        self.assertEqual((code, result["verdict"]), (1, "NOT-SERVED"))
+        self.assertEqual((code, result["verdict"]), (2, "INVALID-NOT-EVICTED"))
 
     def test_positive_load_delta_and_fast_replay_pass(self):
         code, result = self.run_replay(1000)
         self.assertEqual((code, result["verdict"]), (0, "SERVED"))
+        self.assertEqual(result["loaded_bytes"], 1000)
+
+    def test_slow_replay_even_with_loads_does_not_pass(self):
+        code, result = self.run_replay(1000, slow=True)
+        self.assertEqual((code, result["verdict"]), (1, "NOT-SERVED"))
+
+    def test_slow_replay_with_no_load_is_negative(self):
+        code, result = self.run_replay(0, slow=True)
+        self.assertEqual((code, result["verdict"]), (1, "NOT-SERVED"))
+
+    def test_stores_are_not_loads_in_legacy_metrics(self):
+        code, result = self.run_replay(0, legacy=True)
+        self.assertEqual((code, result["loaded_bytes"]), (2, 0))
+
+    def test_load_during_evictors_does_not_count_towards_replay(self):
+        code, result = self.run_replay(0, evict_growth=5000)
+        self.assertEqual((code, result["loaded_bytes"]), (2, 0))
+
+    def test_flat_counter_can_first_appear_during_replay(self):
+        for alias in (True, False):
+            with self.subTest(alias=alias):
+                code, result = self.run_replay(1000, appears=True, alias=alias)
+                self.assertEqual((code, result["verdict"], result["loaded_bytes"]), (0, "SERVED", 1000))
+
+    def test_interrupted_or_failed_request_is_invalid(self):
+        for error in (ConnectionError("stream ended before [DONE]"), OSError("connection refused")):
+            with self.subTest(error=error):
+                code, result = self.run_replay(1000, error=error)
+                self.assertEqual((code, result["verdict"]), (2, "INVALID-REQUEST"))
 
     def test_missing_load_metrics_are_an_invalid_run(self):
         code, result = self.run_replay(0, missing=True)
