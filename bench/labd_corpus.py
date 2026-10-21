@@ -7,11 +7,16 @@ import harness
 def load_corpus(path):
     """Reuse an existing corpus, or freeze this checkout's documentation on first run."""
     path = Path(path)
-    if path.exists():
-        return path.read_text(encoding="utf-8")
-
     repo = Path(harness.REPO)
-    files = sorted([*repo.glob("*.md"), *repo.glob("*/README.md")])
+    if path.exists():
+        text = path.read_text(encoding="utf-8")
+        if not text.strip():
+            raise ValueError(f"{path} is blank; delete it and run bench/labd_bench.py once to rebuild from {repo}")
+        return text
+    if path.name == "labd_corpus_long.txt":
+        raise ValueError(f"{path} is missing; run bench/make_long_corpus.py to build the long corpus")
+
+    files = sorted([*repo.glob("*.md"), *repo.glob("*/README.md")], key=str)
     text = "\n\n".join(p.read_text(encoding="utf-8") for p in files)
     if not text.strip():
         raise ValueError(f"no documentation found in {repo}; cannot build LABD corpus {path}")

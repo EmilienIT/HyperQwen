@@ -71,13 +71,46 @@ class CorpusTests(unittest.TestCase):
     def test_documents_are_sorted_and_subdirectory_readmes_are_included(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
-            (repo / "README.md").write_text(DOCUMENT, encoding="utf-8")
             (repo / "PATCHES.md").write_text("# Patches", encoding="utf-8")
+            (repo / "README.md").write_text(DOCUMENT, encoding="utf-8")
+            (repo / "a-b.md").write_text("# Sibling", encoding="utf-8")
+            (repo / "a").mkdir()
+            (repo / "a/README.md").write_text("# Nested", encoding="utf-8")
             (repo / "single-user").mkdir()
             (repo / "single-user/README.md").write_text("# Single user", encoding="utf-8")
-            with mock.patch.object(harness, "REPO", tmp):
+            # Deliberately unordered glob results: independent of filesystem order.
+            def glob(path, pattern):
+                return ([repo / "README.md", repo / "a-b.md", repo / "PATCHES.md"] if pattern == "*.md"
+                        else [repo / "single-user/README.md", repo / "a/README.md"])
+            with mock.patch.object(harness, "REPO", tmp), mock.patch.object(Path, "glob", glob):
                 corpus = load_corpus(repo / "corpus.txt")
-            self.assertTrue(corpus.startswith("# Patches\n\n" + DOCUMENT + "\n\n# Single user"))
+            self.assertTrue(corpus.startswith("# Patches\n\n" + DOCUMENT + "\n\n# Sibling\n\n# Nested\n\n# Single user"))
+
+    def test_preexisting_blank_corpus_is_refused_without_rewriting_or_requests(self):
+        for script in ("labd_bench.py", "labd_accept.py"):
+            with self.subTest(script=script), tempfile.TemporaryDirectory() as tmp:
+                home = Path(tmp)
+                corpus = home / "bench/labd_corpus.txt"
+                corpus.parent.mkdir()
+                original = b"\n" * 200000
+                corpus.write_bytes(original)
+                with mock.patch.dict(os.environ, HOME=tmp, USERPROFILE=tmp), \
+                        mock.patch.object(sys, "argv", [script, "blank-test"]), \
+                        mock.patch.object(harness, "post", side_effect=AssertionError("server reached before corpus validation")) as post:
+                    with self.assertRaisesRegex(ValueError, "is blank.*delete it"):
+                        runpy.run_path(str(BENCH / script), run_name="__main__")
+                post.assert_not_called()
+                self.assertEqual(corpus.read_bytes(), original)
+
+    def test_missing_long_corpus_is_not_replaced_with_short_docs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = Path(tmp) / "labd_corpus_long.txt"
+            with mock.patch.object(sys, "argv", ["labd_bench.py", "long-test", "--corpus", str(corpus)]), \
+                    mock.patch.object(harness, "post", side_effect=AssertionError("server reached before corpus validation")) as post:
+                with self.assertRaisesRegex(ValueError, "make_long_corpus.py"):
+                    runpy.run_path(str(BENCH / "labd_bench.py"), run_name="__main__")
+            post.assert_not_called()
+            self.assertFalse(corpus.exists())
 
     def test_relative_corpus_path(self):
         with tempfile.TemporaryDirectory() as tmp:
