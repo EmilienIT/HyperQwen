@@ -27,6 +27,8 @@ jobs:
         run: python bench/mq3d_capacity_property.py
       - name: Check the capacity property test still catches a broken derivation
         run: python bench/mq3d_capacity_property.py --mutate seq-rows
+      - name: Check the demo rejects missing or insufficient document data
+        run: python bench/test_demo_corpus.py
       - name: Check verbatim answer classification without a GPU
         run: python bench/verbatim.py
       - name: Check the bench harness (resolve_api_key.sh's key, the URL, streams and /metrics) without a GPU

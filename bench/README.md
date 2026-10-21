@@ -42,7 +42,8 @@ none, and the `.sh` scripts ask `/v1/models`. The `.sh` measurements take `PORT`
 | `conc_ladder.py` | measurement | server | 0 | Decode tok/s per stream at N=1..8, with passes, preemptions and KV occupancy. `--salt S` fixes the prompts across boots for an A/B. |
 | `concurrent_collapse.py` | reproducer | server | 0, or 1 if a trial collapsed or a request errored | The "!!!!" collapse from #208. |
 | `demo/` | demo | Node | n/a | The canvas renderer for the README video. See `demo/README.md`. |
-| `demo_capture.py` | demo | server | 0 | Records one lane of the demo video: each token and the time it arrived. |
+| `demo_capture.py` | demo | server, frozen LABD corpus | 0, 2 if the corpus is missing, blank or too short | Records one lane of the demo video: each token and the time it arrived. |
+| `test_demo_corpus.py` | test | CPU | 0 or 1 | The demo rejects invalid corpora before requests and sends the frozen document to the copy task. |
 | `harness.py` | library | CPU | n/a | How the scripts reach the server: the key, the URL, the model, the request, the stream and `/metrics`. For the bash scripts, `python3 bench/harness.py spec` prints the drafts and accepted-token counters and `model` the served name. |
 | `interleave_dose.py` | measurement | server | 0 | Prefix reuse against a dose of interleaved traffic, with the single-conversation control. |
 | `labd_accept.py` | measurement | server | 0, or 1 if the server ignores `return_tokens_as_token_ids` | Teacher-forced tokens per step for lookup-augmented drafting. |
