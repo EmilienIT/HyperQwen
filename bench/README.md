@@ -48,7 +48,7 @@ none, and the `.sh` scripts ask `/v1/models`. The `.sh` measurements take `PORT`
 | `interleave_dose.py` | measurement | server | 0 | Prefix reuse against a dose of interleaved traffic, with the single-conversation control. |
 | `labd_accept.py` | measurement | server | 0, or 1 if the server ignores `return_tokens_as_token_ids` | Teacher-forced tokens per step for lookup-augmented drafting. |
 | `labd_bench.py` | measurement | server | 0 | Six long-context greedy tasks: decode speed and tokens per step. |
-| `labd_corpus.py` | library | CPU | | Reuses the frozen LABD corpus, or builds it from this checkout's documentation on first run. |
+| `labd_corpus.py` | library | CPU | n/a | Reuses a nonblank frozen corpus without rewriting it, or builds this checkout's docs on first run. A missing `labd_corpus_long.txt` must be built with `make_long_corpus.py`. Blank existing inputs are refused with rebuild instructions. |
 | `labd_soak.py` | test | server | 0 or 1 | The long verify block at batch > 1. |
 | `make_long_corpus.py` | data tool | `~/bench/labd_corpus.txt`, vLLM source | 0, or 1 if an input is missing | Builds the long-context LABD corpus. |
 | `mq3d_capacity_property.py` | test | CPU | 0, 1, 2 if no batch was eligible, 3 if `--mutate` did not break the property | The int4 3D scratch capacity property. `--mutate seq-rows` is its negative control and exits 0 when it breaks the property. |

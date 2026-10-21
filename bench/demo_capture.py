@@ -36,7 +36,7 @@ try:
     with open(_corpus, encoding="utf-8") as f:
         doc = f.read()[: int(DOC_TOKENS * 2.9)]
 except FileNotFoundError:
-    print(f"INVALID: {_corpus} is missing; build the frozen LABD corpus before recording", file=sys.stderr)
+    print(f"INVALID: {_corpus} is missing; run bench/labd_bench.py once to build the frozen LABD corpus before recording", file=sys.stderr)
     sys.exit(2)
 if not doc.strip() or len(doc) < int(DOC_TOKENS * 2.9):
     print(f"INVALID: {_corpus} is blank or too short for the document demo", file=sys.stderr)
