@@ -64,7 +64,8 @@ def post(path, payload, timeout=1200):
 def stream(path, payload, timeout=1800):
     """POST a streaming request and yield each SSE data frame, decoded, until [DONE]. Lines that are not data
     (the blank separators, a `: keep-alive` comment) are skipped. EOF before [DONE] is a failed request,
-    even if some tokens or usage arrived. The caller times the frames itself."""
+    even if some tokens or usage arrived. An error frame is a failure even when followed by [DONE].
+    The caller times the frames itself."""
     with urllib.request.urlopen(request(path, payload), timeout=timeout) as r:
         for raw in r:
             line = raw.decode().strip()
@@ -73,7 +74,12 @@ def stream(path, payload, timeout=1800):
             body = line[5:].strip()
             if body == "[DONE]":
                 return
-            yield json.loads(body)
+            frame = json.loads(body)
+            if isinstance(frame, dict) and "error" in frame:
+                error = frame["error"]
+                detail = error.get("message", error) if isinstance(error, dict) else error
+                raise ConnectionError(f"SSE request failed: {detail}")
+            yield frame
     raise ConnectionError("SSE stream closed before [DONE]; response is incomplete")
 
 

@@ -2,6 +2,7 @@
 """CPU-only checks for bench/harness.py: the key chain matches resolve_api_key.sh, one URL convention, post(),
 stream() and the /metrics readers."""
 import contextlib
+import http.client
 import http.server
 import json
 import os
@@ -68,20 +69,31 @@ class BaseUrlTests(unittest.TestCase):
 
 
 @contextlib.contextmanager
-def stub(body):
+def stub(body, chunked=False, terminate=True):
     """A server on a free port that answers every GET and POST with `body`, then closes the connection.
     Yields the list of requests it saw, as {method, path, auth, ctype, body}, sets VLLM_API and the key, and
     unsets VLLM_MODEL."""
     seen = []
 
     class Handler(http.server.BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1" if chunked else "HTTP/1.0"
+
         def answer(self):
             n = int(self.headers["Content-Length"] or 0)
             seen.append({"method": self.command, "path": self.path, "auth": self.headers["Authorization"],
                          "ctype": self.headers["Content-Type"], "body": json.loads(self.rfile.read(n)) if n else None})
             self.send_response(200)
+            if chunked:
+                self.send_header("Transfer-Encoding", "chunked")
+                self.send_header("Connection", "close")
             self.end_headers()
-            self.wfile.write(body)
+            if chunked:
+                self.wfile.write(f"{len(body):x}\r\n".encode() + body + b"\r\n")
+                if terminate:
+                    self.wfile.write(b"0\r\n\r\n")
+                self.close_connection = True
+            else:
+                self.wfile.write(body)
 
         do_GET = do_POST = answer
 
@@ -179,6 +191,23 @@ class StreamTests(unittest.TestCase):
     def test_done_without_content_is_complete(self):
         with stub(b"data: [DONE]\n\n"):
             self.assertEqual(list(harness.stream("/v1/completions", {"stream": True}, timeout=10)), [])
+
+    def test_server_error_frame_is_failure_even_followed_by_done(self):
+        prefix = b'data: {"choices":[{"delta":{"content":"partial"}}]}\n\n'
+        for path in ("/v1/chat/completions", "/v1/completions"):
+            for error in ({"message": "engine generation failed", "code": 500}, "engine generation failed"):
+                body = prefix + b'data: ' + json.dumps({"error": error}).encode() + b'\n\ndata: [DONE]\n\n'
+                with self.subTest(path=path, error=error), stub(body):
+                    frames = harness.stream(path, {"stream": True}, timeout=10)
+                    self.assertEqual(next(frames)["choices"][0]["delta"]["content"], "partial")
+                    with self.assertRaisesRegex(ConnectionError, "engine generation failed"):
+                        list(frames)
+
+    def test_chunked_connection_cut_between_chunks_is_failure(self):
+        body = SSE.split(b"data: [DONE]", 1)[0]
+        with stub(body, chunked=True, terminate=False):
+            with self.assertRaises((ConnectionError, http.client.IncompleteRead)):
+                list(harness.stream("/v1/chat/completions", {"stream": True}, timeout=10))
 
 
 # What vLLM's prometheus_client writes for two engines: <name>_total and <name>_created per label set, with
