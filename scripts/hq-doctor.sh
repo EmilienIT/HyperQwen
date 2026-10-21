@@ -43,7 +43,8 @@ fi
 PORT=${PORT:-18020}
 say "== port $PORT"
 if command -v ss >/dev/null 2>&1; then
-  if ss -ltn 2>/dev/null | grep -q ":$PORT "; then
+  # Read the whole listing: grep -q can SIGPIPE the producer under pipefail.
+  if ss -ltn 2>/dev/null | grep ":$PORT " >/dev/null; then
     ss -ltnp 2>/dev/null | grep ":$PORT " | sed 's/^/  occupant: /' || true
   else
     say "  free (nothing listening)"
@@ -53,7 +54,8 @@ else
 fi
 
 say "== health"
-CODE=$(curl -s --connect-timeout 5 --max-time 10 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/health" 2>/dev/null) || CODE=000
+CRC=0
+CODE=$(curl -s --connect-timeout 5 --max-time 10 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/health" 2>/dev/null) || { CRC=$?; CODE=000; }
 say "  GET /health -> HTTP $CODE"
 if [ "$CODE" = 200 ]; then
   say "  healthy (note: /health 200 can precede first-prompt readiness by ~1 min on a cold boot)"
@@ -63,7 +65,7 @@ fi
 say "== last error (docker logs, if any)"
 if command -v docker >/dev/null 2>&1; then
   for c in hyperqwen-single-1 hyperqwen-batch-1; do
-    if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx "$c"; then
+    if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -x "$c" >/dev/null; then
       say "  -- $c --"
       docker logs --tail 25 "$c" 2>&1 | grep -iE 'error|fail|refus|traceback|killed|terminated|uv[as]|out of memory|no such|not found' | tail -8 | sed 's/^/  /' || true
     fi
@@ -72,7 +74,9 @@ else
   warn "docker not on PATH"
 fi
 RC=1
-if [ "$CODE" = 000 ]; then
+if [ "$CODE" = 000 ] && [ "$CRC" = 28 ]; then
+  say "doctor: /health check on :$PORT timed out (busy, unreachable or stuck; watch make logs, do NOT restart mid-compile)"
+elif [ "$CODE" = 000 ]; then
   say "doctor: no server on :$PORT (start: make up-single; follow: make logs)"
 else
   say "doctor: server on :$PORT answers HTTP $CODE (not ready; watch make logs, do NOT restart mid-compile)"
