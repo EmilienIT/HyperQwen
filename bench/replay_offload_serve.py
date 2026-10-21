@@ -20,6 +20,8 @@ per-configuration ratios, and the GPU pool does not scale linearly with KV_MEM o
 boot log and the metrics rather than computing them), so a tier that is 3x the pool in bytes can be smaller than it in tokens. If the stores overflow the tier, X is evicted from the tier
 before X-again and the run reads exactly like the #52735 veto (ratio ~1, zero loads, zero external hits). With
 TIER_GIB set the script refuses that verdict and prints INVALID-TIER-OVERFLOW instead.
+The CPU tier is allocated in /dev/shm: check its free space (df -h /dev/shm) before boot
+and leave room below it; a tier that exceeds free shared memory will not start.
 """
 import glob
 import http.client
