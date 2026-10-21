@@ -13,6 +13,10 @@ Everything here runs on the 3090 in the serving venv; ~6 h of GPU time end to en
 final record before appending and adds a missing final newline to complete records;
 corruption earlier in the file stops the run instead of being silently skipped.
 The stdlib-only recovery helper is `generation_state.py`.
+A nonblocking OS lock on `data/gen.jsonl.lock` excludes a second generator before
+resume repair or model loading, and stays held through all writes. The sidecar
+file remains, but a process exit releases its lock automatically. Do not delete
+the sidecar while a generator is running.
 
 ## What actually mattered (in order)
 
