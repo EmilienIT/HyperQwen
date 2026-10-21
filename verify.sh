@@ -426,10 +426,10 @@ if [ $NOSRV = 0 ]; then
         -d '{"model":"qwen3.8-27b","messages":[{"role":"user","content":"Hvad er hovedstaden i Danmark? Svar med ét ord."}],"max_tokens":8,"temperature":0,"chat_template_kwargs":{"enable_thinking":false}}')
     echo "$R" | grep -qi "københavn\|copenhagen" && ok "chat completion answers ('$(echo "$R" | $PY -c 'import json,sys; print(json.load(sys.stdin)["choices"][0]["message"]["content"].strip())' 2>/dev/null)')" || fail "chat completion wrong/failed: $(echo "$R" | head -c 200)"
     # A text answer can pass with a broken/disabled vision tower. Require two
-    # image-dependent answers when Vision is requested; expected numbers live only in pixels.
+    # Image-dependent answers when Vision is requested; expected color order lives only in pixels.
     if [ "${VISION:-0}" = 1 ]; then
       if VLLM_API="$SRV" OPENAI_API_KEY="$KEY" "$PY" bench/vision_smoke.py; then
-        ok "Vision reads two different image numbers"
+        ok "Vision reads two different image color orders"
       else
         fail "Vision image round-trip failed (see above)"
       fi

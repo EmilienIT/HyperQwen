@@ -20,11 +20,11 @@ import harness
 import vision_smoke
 
 REPO = Path(__file__).resolve().parents[1]
-MARKERS = ["123456", "654321"]
+MARKERS = ["red blue yellow", "green yellow blue"]
 
 
 @contextlib.contextmanager
-def stub(image_answers=(), status=200):
+def stub(image_answers=(), status=200, error_body=None):
     seen = []
     answers = iter(image_answers)
 
@@ -37,7 +37,8 @@ def stub(image_answers=(), status=200):
             answer = next(answers, "Copenhagen") if image else "Copenhagen"
             self.send_response(status)
             self.end_headers()
-            self.wfile.write(json.dumps({"choices": [{"message": {"content": answer}}]}).encode())
+            body = {"choices": [{"message": {"content": answer}}]} if error_body is None else error_body
+            self.wfile.write(json.dumps(body).encode())
 
         def log_message(self, format, *args):
             pass
@@ -74,6 +75,8 @@ class VerifyTests(unittest.TestCase):
         self.assertIn("FAIL Vision", result.stdout)
         self.assertEqual(len(seen), 3)  # one text request and two different images
         self.assertTrue(all(auth == "Bearer vision-key" for _, auth, _ in seen))
+        self.assertNotEqual(seen[1][2]["messages"][0]["content"][1],
+                            seen[2][2]["messages"][0]["content"][1])
 
     def test_vision_disabled_keeps_the_text_check(self):
         with stub() as (url, seen):
@@ -105,6 +108,8 @@ class SmokeTests(unittest.TestCase):
             texts.append(text)
             for marker in MARKERS:
                 self.assertNotIn(marker, text["text"])
+                for color in marker.split():
+                    self.assertNotIn(color, text["text"].lower())
             url = image["image_url"]["url"]
             self.assertTrue(url.startswith("data:image/png;base64,"))
             images.append(base64.b64decode(url.split(",", 1)[1], validate=True))
@@ -124,10 +129,25 @@ class SmokeTests(unittest.TestCase):
         self.assertEqual(code, 1, out)
 
     def test_http_error_is_failure_not_no_server(self):
-        with stub(status=400) as (url, _):
+        reason = "At most 0 image(s) may be provided in one prompt."
+        with stub(status=400, error_body={"error": reason}) as (url, _):
             code, out = self.run_check(url)
         self.assertEqual(code, 1, out)
         self.assertEqual(out.count("HTTP 400"), 2)
+        self.assertIn(reason, out)
+
+    def test_color_reply_accepts_case_spaces_and_commas(self):
+        with stub(["RED, BLUE, YELLOW.", "The panels are green, yellow and blue."]) as (url, _):
+            code, out = self.run_check(url)
+        self.assertEqual(code, 0, out)
+
+    def test_markers_are_different_and_have_three_distinct_colors(self):
+        markers = vision_smoke.new_markers()
+        self.assertEqual(len(markers), 2)
+        self.assertNotEqual(*markers)
+        for marker in markers:
+            self.assertEqual(len(set(marker.split())), 3)
+            self.assertTrue(set(marker.split()) <= vision_smoke.COLORS.keys())
 
     def test_no_server_is_an_invalid_run(self):
         with mock.patch.object(harness, "post", side_effect=urllib.error.URLError("refused")):
@@ -159,12 +179,16 @@ class SmokeTests(unittest.TestCase):
             offset += size + 12
         self.assertEqual(set(chunks), {b"IHDR", b"IDAT", b"IEND"})  # no marker text metadata
         width, height, depth, color, _, _, interlace = struct.unpack(">IIBBBBB", chunks[b"IHDR"])
-        self.assertEqual((width, height, depth, color, interlace), (512, 192, 8, 0, 0))
+        self.assertEqual((width, height, depth, color, interlace), (768, 256, 8, 2, 0))
         pixels = zlib.decompress(chunks[b"IDAT"])
-        self.assertEqual(len(pixels), (width + 1) * height)
-        self.assertTrue(all(pixels[y * (width + 1)] == 0 for y in range(height)))
+        stride = width * 3 + 1
+        self.assertEqual(len(pixels), stride * height)
+        self.assertTrue(all(pixels[y * stride] == 0 for y in range(height)))
         self.assertEqual(set(pixels), {0, 255})
-        self.assertGreater(pixels.count(0), height)  # actual dark glyphs, beyond row filter bytes
+        for i, name in enumerate(MARKERS[0].split()):
+            offset = 128 * stride + 1 + (128 + 256 * i) * 3
+            self.assertEqual(pixels[offset:offset + 3], vision_smoke.COLORS[name])
+        self.assertEqual(pixels[1:4], b"\xff" * 3)  # white margin, no labels
 
 
 if __name__ == "__main__":
