@@ -96,8 +96,10 @@ none, and the `.sh` scripts ask `/v1/models`. The `.sh` measurements take `PORT`
 | `test_spec_decode_fp8.py` | kernel test | GPU, sm89+ | 0 or 1. Skips below sm89 or without the fp8 path. | The fp8 path of the split-KV kernel. The timing rows are informational. |
 | `test_t4_battery.py` | test | CPU, bash | 0 or 1 | `t4_battery.py`'s dry-run plan, parsers, restart gate (on a fake `/proc`), verdict, and one run against a stub launcher. |
 | `test_vision_knobs.py` | test | CPU, bash | 0 or 1 | All three launchers' Vision limits, CPU tower-offload budget and boolean controls against a stub vLLM. |
+| `test_vision_smoke.py` | test | CPU, bash | 0 or 1 | Pixel-dependent Vision verification against stub HTTP servers, including a server that only answers text. |
 | `tune_gdn.py` | measurement | GPU | 0 | The Gated DeltaNet decode kernel over block sizes and warp counts. |
 | `verbatim.py` | library and test | CPU | 0 or 1 | How much of an answer copies its source. The two sweeps use it. Run alone, it tests itself. |
+| `vision_smoke.py` | smoke test | server with `VISION=1` | 0 if both color orders are read, 1 if a response fails, 2 if no server answers | Two different orders of three large color panels, the same question; expected color names/order appear only in the pixels. Run by `VISION=1 bash verify.sh`; a setting in the server's environment alone does not enable this check. |
 | `warmup.sh` | lifecycle | server | 0 or 1 | Warms the serving path after boot. `single-user/qwen-server.sh` runs it when `WARMUP=1`. |
 
 For comparable code scores, set `CODE_CORPUS_DIR` to the same fixed **vllm package

@@ -420,6 +420,12 @@ Point your chat client at `http://<host>:18020/v1` with the key from
 `api_key.txt`. Works with anything that speaks the OpenAI API, tool calling
 included (`tools` + `tool_choice: "auto"` come back as `tool_calls`).
 
+Run `VISION=1 bash verify.sh` to check that two different images produce the color
+orders shown in their pixels. Export `VISION=1` in the verifier's shell even if the
+server gets that setting from `.env`, Compose or systemd. Run `python bench/vision_smoke.py` separately
+against a remote server using `VLLM_API` and the usual client key. This is an image
+round-trip check, not a Vision quality benchmark.
+
 ## Knobs
 
 All three launchers share the Vision controls: `VISION` and `VISION_OFFLOAD` accept
