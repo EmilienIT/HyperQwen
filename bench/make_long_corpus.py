@@ -16,11 +16,14 @@ codebase in context.
 
 Note the corpus runs ~2.9 characters per token, not the 3.6 labd_bench.py assumes, so
 --ctx N produces roughly 1.24 N tokens. --ctx 100000 gave 112,655-token prompts.
+Set CODE_CORPUS_DIR to a fixed vllm package tree for comparisons across installs.
+Without it, prefer the checkout's historical venv source, then the active Python's install.
 """
-import glob
-import importlib.util
 import os
 import sys
+from pathlib import Path
+
+from code_corpus import source_files
 
 BASE = os.path.expanduser("~/bench/labd_corpus.txt")
 OUT = os.path.expanduser("~/bench/labd_corpus_long.txt")
@@ -31,19 +34,15 @@ if not os.path.exists(BASE):
 
 with open(BASE, encoding="utf-8", newline="") as f:
     base = f.read()
-# Find the active install without importing vLLM (which may initialize CUDA).
-spec = importlib.util.find_spec("vllm")
-if spec is None or not spec.submodule_search_locations:
-    sys.exit("vLLM is not installed in this Python environment; run with the serving venv's Python")
-src = os.path.join(next(iter(spec.submodule_search_locations)), "v1")
-files = sorted(glob.glob(os.path.join(src, "**", "*.py"), recursive=True))
-if not files:
-    sys.exit(f"no vLLM source under {src}")
+try:
+    src, files = source_files("v1", recursive=True)
+except RuntimeError as exc:
+    sys.exit(str(exc))
 
 parts, seen = [], 0
 for f in files:
     try:
-        text = open(f, encoding="utf-8", errors="ignore").read()
+        text = Path(f).read_text(encoding="utf-8", errors="ignore")
     except OSError:
         continue
     if len(text) < 2000:
@@ -53,9 +52,12 @@ for f in files:
     if seen > TARGET:
         break
 
+if not parts:
+    sys.exit(f"No eligible source files under {src}; set CODE_CORPUS_DIR to a fixed vllm package directory")
 long = base + "".join(parts)
 assert long[: len(base)] == base, "the frozen head must stay byte-identical"
 os.makedirs(os.path.dirname(OUT), exist_ok=True)
 with open(OUT, "w", encoding="utf-8", newline="") as f:
     f.write(long)
 print(f"{OUT}: {len(long)} chars ({len(base)} frozen head + {len(parts)} source files)")
+print(f"code corpus: {src}; {len(parts)} selected / {len(files)} source files, {seen} source chars")
