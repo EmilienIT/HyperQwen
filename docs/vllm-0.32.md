@@ -78,9 +78,10 @@ with the same tool-call arguments on both builds.
   221,907 tokens against 217,268; `alternative.sh` 307,058 against 300,675).
 - **Tokens per step at default temperature, seeded, two boots per image:** `alternative.sh` +0.2%, DFlash2 k7 -0.9% on
   the 3090; single-user +0.6%, `alternative.sh` -0.2%, DFlash2 k7 +0.2% on the 4090. Each is inside the gap between the
-  0.31 arm's own two boots. Greedy, the copy probe's verbatim-copy task gives byte-identical output on both pins on
+  0.31 arm's own two boots. Greedy, the copy probe's verbatim-copy task produced the same output hash on both pins on
   every profile compared (MTP and DFlash2 `CTX=long`, DFlash2 k15); its other two tasks differ in places, one of three
-  on MTP `CTX=long`.
+  on MTP `CTX=long`. Greedy decoding with speculation is not guaranteed bit-exact, so matching hashes are an
+  observation, not a property.
 - **Prefix-cache correctness** (`bench/residue_sweep.py`, `SPEC=dflash2 CTX=huge PREFIX_CACHE=1`): 0 broken of 128 on
   both pins on the 3090 and on the 4090, 0 broken cold, every 4090 answer one hash; the server's own log shows the
   cache hit (97.7-98.3%).
@@ -93,7 +94,7 @@ with the same tool-call arguments on both builds.
 - **Batch:** the forced 64-prompt step and the 64-way burst of 128 serve on both pins; margin after the step 177 MiB on
   the 3090 on both pins (0.31.0's port measured 174).
 - **pth-flash-attn's 8.6 default** (`SPEC=mtp CTX=long`, `SPEC=dflash2 CTX=long`): boots with `PTH_FA=1` chosen by the
-  launcher on both pins, and the three copy-probe answers are byte-identical between the pins on the DFlash2 profile
+  launcher on both pins, and the three copy-probe answers have the same hashes on both pins on the DFlash2 profile
   (tokens per step 7.701 on both). On the 4090 the launcher does not choose it (compute capability 8.9).
 
 ## FlashInfer outside the launchers
