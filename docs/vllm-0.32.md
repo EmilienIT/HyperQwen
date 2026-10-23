@@ -84,7 +84,8 @@ with the same tool-call arguments on both builds.
   observation, not a property.
 - **Prefix-cache correctness** (`bench/residue_sweep.py`, `SPEC=dflash2 CTX=huge PREFIX_CACHE=1`): 0 broken of 128 on
   both pins on the 3090 and on the 4090, 0 broken cold, every 4090 answer one hash; the server's own log shows the
-  cache hit (97.7-98.3%).
+  cache hit (97.7-98.3%). The 4090 ran a smaller pool (203,378 tokens), because the shipped pin does not fit the
+  4090 it ran on.
 - **First-request JIT:** 0 compiles during inference on both pins.
 - **`CTX=huge`'s KVarN pool** at the shipped 3090 defaults is 268,169 tokens on both pins.
 - **Two long conversations' reuse:** `alternative.sh` 93.5% for both on both pins; with an 8 GB CPU tier, 57,664 tokens
