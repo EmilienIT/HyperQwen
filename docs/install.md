@@ -131,6 +131,10 @@ bash kvarn/install.sh
 # libraries with nvcc 13 (the pip nvcc above is found automatically), needs git and a host C++
 # compiler, and takes ~3-5 minutes. Nothing uses it unless FA2_FP8KV=1.
 bash fa2/install.sh
+# xgrammar built from source with the bounded-string fix for Qwen tool calls (xgrammar/README.md): without it, a
+# maxLength in a tool schema drops decode to ~7 tok/s under TOOL_STRICT=parameter. Needs git, a host C++ compiler
+# and about a minute.
+bash xgrammar/install.sh
 
 # api key — optional on one machine: with no key the launchers bind 127.0.0.1 only. To serve other
 # machines, set a key (they then bind 0.0.0.0) or set HOST explicitly.

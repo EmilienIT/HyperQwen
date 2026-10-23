@@ -246,6 +246,7 @@ Everything that used to be in this README, in the folder it belongs to.
 | [drafter/](drafter/) | How the draft vocabulary, the int4 drafters and the DFlash2 requantization were built — including what did not work. |
 | [kvarn/](kvarn/) | The KVarN 4/2-bit KV cache port. |
 | [fa2/](fa2/) | The fp8-KV FlashAttention-2 source port (optional; `bash fa2/install.sh` builds it, `FA2_FP8KV=1` selects it). |
+| [xgrammar/](xgrammar/) | A source build of xgrammar with the bounded-string fix for Qwen tool calls (`bash xgrammar/install.sh`); without it a tool schema's `maxLength` drops decode to ~7 tok/s under `TOOL_STRICT=parameter`. |
 
 ## License
 

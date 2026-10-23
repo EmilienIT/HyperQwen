@@ -37,6 +37,10 @@ RUN PY=venv/bin/python bash pthfa/install.sh
 COPY fa2/ fa2/
 RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/* \
     && FA2_CACHE=/tmp/fa2-cache bash fa2/install.sh && rm -rf /tmp/fa2-cache
+# xgrammar from mlc-ai/xgrammar#989 plus the Qwen template-newline fix, over the release vLLM pins: a maxLength on a
+# tool's string parameter otherwise drops decode to ~7 tok/s under TOOL_STRICT=parameter (xgrammar/README.md).
+COPY xgrammar/ xgrammar/
+RUN bash xgrammar/install.sh
 
 COPY . .
 # patches/apply.sh reads the apply order from patches/series and applies it with --fuzz 0:
