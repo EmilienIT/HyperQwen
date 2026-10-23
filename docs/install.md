@@ -76,8 +76,11 @@ venv/bin/pip install vllm==0.32.0 huggingface_hub hf_transfer ninja \
 #
 # If you have no usable nvcc, set VLLM_USE_FLASHINFER_SAMPLER=0 (the launchers
 # already do): it now covers the selector as well as the sampler and falls back to
-# torch.topk. Measured cost of that fallback on a 3090, dflash2 CTX=fast,
-# teacher-forced against a neutral SPEC=off target: -1.8% tok/step, -3.0% tok/s.
+# torch.topk. Measured cost of the selector's fallback on a 3090 (vLLM 0.32.0,
+# dflash2 CTX=fast, ~23k-token prompts teacher-forced against a SPEC=off target,
+# three boots each way): the same tokens per step, 0.35% lower decode tok/s. The
+# sampler's fallback was not measured; a request with a seed, or with neither
+# top_k nor top_p, takes torch's sampler either way.
 # Upstream's "roughly half the speed" is the vocab-wide op in isolation, not the step.
 #
 # Any FlashInfer JIT needs nvcc, and needs its version to EQUAL the CUDA headers'
