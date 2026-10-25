@@ -92,7 +92,7 @@ class CheckpointSafetyTests(unittest.TestCase):
                         eligible += 1
                         self.assertLess(offsets[0], length)
         self.assertGreater(eligible, 0)
-        offsets, _ = compute([8192], [8192], 2048, 832, 1, False)
+        offsets, _ = compute([8192], [8192], 2048, 2048, 1, False)
         self.assertEqual(offsets, [6144])
 
     def test_manager_assumes_the_backend_wrote_the_reserved_checkpoint(self):
@@ -101,13 +101,14 @@ class CheckpointSafetyTests(unittest.TestCase):
         calls = []
         pool = NS(hash_block_size=2048,
                   cache_partial_block=lambda **kwargs: calls.append(kwargs) or "published")
-        manager = NS(block_pool=pool, _checkpoints={"r": (6144, 8)},
-                     req_to_blocks={"r": [None] * 8 + [NS(block_hash_num_tokens=None)]},
-                     kv_cache_group_id=0, block_size=832, drop_eagle_checkpoint_block=False)
+        manager = NS(block_pool=pool, _checkpoints={"r": (6144, 2)},
+                     req_to_blocks={"r": [None] * 2 + [NS(block_hash_num_tokens=None, block_id=8)]},
+                     kv_cache_group_id=0, block_size=2048, drop_eagle_checkpoint_block=False)
         request = NS(request_id="r", num_prompt_tokens=8192)
         result = self.scope["_cache_partial_tail_block"](manager, request, 8192, None)
         self.assertEqual(result, "published")
         self.assertEqual(calls[0]["num_tokens"], 6144)
+        self.assertEqual(calls[0]["block"].block_id, 8)
 
 
 if __name__ == "__main__":
