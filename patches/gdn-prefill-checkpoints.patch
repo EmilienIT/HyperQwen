@@ -1,51 +1,28 @@
-GDN prefill checkpoints: wire the Qwen GDN path into the
-backend-neutral prefill checkpoint machinery. Default off
-(VLLM_GDN_PREFILL_CHECKPOINTS); no behavior change when unset.
+GDN checkpoint plumbing from PR #392, kept dormant until exact interior
+checkpoint export is implemented. Default off. Explicit opt-in fails before
+allocation rather than advertising an unwritten physical state block.
 
-Qwen GDN (Gated DeltaNet) layers build their MambaSpec from the
-shared base get_kv_cache_spec, which never sets
-num_prefill_checkpoint_blocks, so the prefill checkpoint machinery
-(MambaPrefillCheckpointBuilder, the manager's per-request
-checkpoint block, MambaPrefillCheckpointMetadata) stays permanently
-dormant for GDN models on every vLLM release through 0.32. Mamba2
-and KDA both opt in; GDN never does.
+The shared validity contract requires query_start < checkpoint < query_end.
+The proposed GDN writer only has final row states and writes at row end,
+so it cannot fill any allocator-valid checkpoint. MambaManager publishes
+reserved checkpoint blocks without a backend acknowledgement. Zero-filling
+the convolution state is also insufficient for exact recurrent-state reuse.
 
-  - QwenGatedDeltaNetAttention.get_kv_cache_spec sets
-    num_prefill_checkpoint_blocks=1, prefill_checkpoint_alignment=1
-    when the gate is set (one dedicated state block per request,
-    already accounted for by MambaSpec.max_memory_usage).
-  - GDNAttentionMetadataBuilder instantiates the builder and
-    resolves per-batch checkpoint rows in build() (align mode only;
-    the same contract KDA/Mamba2 use).
-  - The GDN prefill path exports the checkpoint when it lands on a
-    row end: the chunk kernel (fla/flashinfer) returns exactly one
-    final state per row, so a mid-query checkpoint cannot be
-    exported from the row final state. Those rows decline (their
-    allocated block stays null) rather than being written from a
-    different state. The conv portion of the checkpoint block is
-    zero-filled (deterministic; perturbs at most the first
-    conv_kernel_size - 1 resumed positions).
-
-Why row-end only: the stock validity rules (hash-aligned row start,
-position strictly interior) rarely hold for 1024-token chunked
-prefill steps under a 2048 hash grid with the EAGLE margin dropped,
-and when they do, the position is interior to the row. Full
-mid-prefill GDN checkpoints need either per-chunk state output from
-the GDN kernel or a GDN-scoped position grid in the manager; this
-patch sets up that follow-up rather than doing it.
-
-Written against vLLM 0.31.0.
+This safety revision preserves the original plumbing and default behavior,
+but refuses VLLM_GDN_PREFILL_CHECKPOINTS=1 until the exporter can provide both
+exact interior recurrent and convolution state. It is not a complete GDN
+checkpoint implementation and makes no GPU correctness/performance claim.
 
 Kind: feature
-What: GDN prefill checkpoint plumbing (spec opt-in + GDN metadata wiring + row-end writer), gated on VLLM_GDN_PREFILL_CHECKPOINTS (default off)
-Upstream: not present in 0.31/0.32 for GDN; machinery = vllm mamba/checkpoint.py + MambaSpec.num_prefill_checkpoint_blocks (cf. Mamba2/KDA opt-in in 0.32)
+What: dormant GDN checkpoint plumbing with incomplete opt-in refused before allocation
+Upstream: PR #392; backend-neutral checkpoint machinery from vLLM 0.31.0
 Cut-against: 0.31.0
-Retires-when: GDN prefill checkpoints land upstream, or a GDN-scoped position grid supersedes the stock validity rules
+Retires-when: GDN exports exact interior recurrent and convolution checkpoint state
 
---- exported from e546feb (gdn-prefill-checkpoints); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from a91b20a (gdn-prefill-checkpoints); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/envs.py b/envs.py
-index 64b5ca2..23f1556 100755
+index 58e7697..8d5298c 100755
 --- a/envs.py
 +++ b/envs.py
 @@ -17,6 +17,7 @@
@@ -56,7 +33,7 @@ index 64b5ca2..23f1556 100755
      VLLM_RINGBUFFER_WARNING_INTERVAL: int = 60
      VLLM_NCCL_SO_PATH: str | None = None
      LD_LIBRARY_PATH: str | None = None
-@@ -735,6 +736,9 @@
+@@ -775,6 +776,9 @@
      # (`hf`, `deepseek_v32`, `deepseek_v4`, …). The `fastokens`
      # Python package must be installed.
      "VLLM_USE_FASTOKENS": lambda: bool(int(os.getenv("VLLM_USE_FASTOKENS", "0"))),
@@ -67,18 +44,10 @@ index 64b5ca2..23f1556 100755
      "VLLM_RINGBUFFER_WARNING_INTERVAL": lambda: int(
          os.environ.get("VLLM_RINGBUFFER_WARNING_INTERVAL", "60")
 diff --git a/model_executor/layers/mamba/gdn/qwen_gdn_linear_attn.py b/model_executor/layers/mamba/gdn/qwen_gdn_linear_attn.py
-index 9d5bcc8..5518f73 100644
+index 9d5bcc8..55bd8e3 100644
 --- a/model_executor/layers/mamba/gdn/qwen_gdn_linear_attn.py
 +++ b/model_executor/layers/mamba/gdn/qwen_gdn_linear_attn.py
-@@ -3,6 +3,7 @@
- """Inference-only Qwen3-Next/Qwen3.5 model."""
- 
- import os
-+from dataclasses import replace
- from typing import Literal
- 
- import torch
-@@ -21,6 +22,7 @@
+@@ -21,6 +21,7 @@
      divide,
  )
  from vllm.forward_context import ForwardContext, get_forward_context
@@ -86,7 +55,7 @@ index 9d5bcc8..5518f73 100644
  from vllm.logger import init_logger
  from vllm.model_executor.custom_op import CustomOp, PluggableLayer
  from vllm.model_executor.layers.layernorm import RMSNormGated
-@@ -383,6 +385,22 @@
+@@ -383,6 +384,23 @@
              self.num_spec,
          )
  
@@ -94,15 +63,16 @@ index 9d5bcc8..5518f73 100644
 +        spec = super().get_kv_cache_spec(vllm_config)
 +        if not isinstance(spec, MambaSpec):
 +            return spec
-+        # GDN prefill checkpoints: opt in to the backend-neutral prefill
-+        # checkpoint machinery (one dedicated state block per request,
-+        # written by the GDN layer when a checkpoint lands on a row end).
-+        # Off by default (VLLM_GDN_PREFILL_CHECKPOINTS).
++        # The allocator selects positions strictly inside a query; the current
++        # GDN kernel returns only its final row state. Declining in the writer
++        # cannot cancel the manager's publication of the reserved block, so
++        # enabling this incomplete exporter would cache uninitialized state.
 +        if envs.VLLM_GDN_PREFILL_CHECKPOINTS:
-+            return replace(
-+                spec,
-+                num_prefill_checkpoint_blocks=1,
-+                prefill_checkpoint_alignment=1,
++            raise RuntimeError(
++                "VLLM_GDN_PREFILL_CHECKPOINTS is unavailable: the GDN backend "
++                "must export the exact interior checkpoint and convolution "
++                "state before checkpoint allocation can be enabled. Unset "
++                "VLLM_GDN_PREFILL_CHECKPOINTS or set it to 0."
 +            )
 +        return spec
 +
