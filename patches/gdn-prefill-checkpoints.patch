@@ -1,0 +1,271 @@
+GDN prefill checkpoints: wire the Qwen GDN path into the
+backend-neutral prefill checkpoint machinery. Default off
+(VLLM_GDN_PREFILL_CHECKPOINTS); no behavior change when unset.
+
+Qwen GDN (Gated DeltaNet) layers build their MambaSpec from the
+shared base get_kv_cache_spec, which never sets
+num_prefill_checkpoint_blocks, so the prefill checkpoint machinery
+(MambaPrefillCheckpointBuilder, the manager's per-request
+checkpoint block, MambaPrefillCheckpointMetadata) stays permanently
+dormant for GDN models on every vLLM release through 0.32. Mamba2
+and KDA both opt in; GDN never does.
+
+  - QwenGatedDeltaNetAttention.get_kv_cache_spec sets
+    num_prefill_checkpoint_blocks=1, prefill_checkpoint_alignment=1
+    when the gate is set (one dedicated state block per request,
+    already accounted for by MambaSpec.max_memory_usage).
+  - GDNAttentionMetadataBuilder instantiates the builder and
+    resolves per-batch checkpoint rows in build() (align mode only;
+    the same contract KDA/Mamba2 use).
+  - The GDN prefill path exports the checkpoint when it lands on a
+    row end: the chunk kernel (fla/flashinfer) returns exactly one
+    final state per row, so a mid-query checkpoint cannot be
+    exported from the row final state. Those rows decline (their
+    allocated block stays null) rather than being written from a
+    different state. The conv portion of the checkpoint block is
+    zero-filled (deterministic; perturbs at most the first
+    conv_kernel_size - 1 resumed positions).
+
+Why row-end only: the stock validity rules (hash-aligned row start,
+position strictly interior) rarely hold for 1024-token chunked
+prefill steps under a 2048 hash grid with the EAGLE margin dropped,
+and when they do, the position is interior to the row. Full
+mid-prefill GDN checkpoints need either per-chunk state output from
+the GDN kernel or a GDN-scoped position grid in the manager; this
+patch sets up that follow-up rather than doing it.
+
+Written against vLLM 0.31.0.
+
+Kind: feature
+What: GDN prefill checkpoint plumbing (spec opt-in + GDN metadata wiring + row-end writer), gated on VLLM_GDN_PREFILL_CHECKPOINTS (default off)
+Upstream: not present in 0.31/0.32 for GDN; machinery = vllm mamba/checkpoint.py + MambaSpec.num_prefill_checkpoint_blocks (cf. Mamba2/KDA opt-in in 0.32)
+Cut-against: 0.31.0
+Retires-when: GDN prefill checkpoints land upstream, or a GDN-scoped position grid supersedes the stock validity rules
+
+--- exported from e546feb (gdn-prefill-checkpoints); regenerate with scripts/export-patch.sh, do not edit ---
+
+diff --git a/envs.py b/envs.py
+index 64b5ca2..23f1556 100755
+--- a/envs.py
++++ b/envs.py
+@@ -17,6 +17,7 @@
+     VLLM_RPC_BASE_PATH: str = tempfile.gettempdir()
+     VLLM_USE_MODELSCOPE: bool = False
+     VLLM_USE_FASTOKENS: bool = False
++    VLLM_GDN_PREFILL_CHECKPOINTS: bool = False
+     VLLM_RINGBUFFER_WARNING_INTERVAL: int = 60
+     VLLM_NCCL_SO_PATH: str | None = None
+     LD_LIBRARY_PATH: str | None = None
+@@ -735,6 +736,9 @@
+     # (`hf`, `deepseek_v32`, `deepseek_v4`, …). The `fastokens`
+     # Python package must be installed.
+     "VLLM_USE_FASTOKENS": lambda: bool(int(os.getenv("VLLM_USE_FASTOKENS", "0"))),
++    "VLLM_GDN_PREFILL_CHECKPOINTS": lambda: bool(
++        int(os.getenv("VLLM_GDN_PREFILL_CHECKPOINTS", "0"))
++    ),
+     # Interval in seconds to log a warning message when the ring buffer is full
+     "VLLM_RINGBUFFER_WARNING_INTERVAL": lambda: int(
+         os.environ.get("VLLM_RINGBUFFER_WARNING_INTERVAL", "60")
+diff --git a/model_executor/layers/mamba/gdn/qwen_gdn_linear_attn.py b/model_executor/layers/mamba/gdn/qwen_gdn_linear_attn.py
+index 9d5bcc8..5518f73 100644
+--- a/model_executor/layers/mamba/gdn/qwen_gdn_linear_attn.py
++++ b/model_executor/layers/mamba/gdn/qwen_gdn_linear_attn.py
+@@ -3,6 +3,7 @@
+ """Inference-only Qwen3-Next/Qwen3.5 model."""
+ 
+ import os
++from dataclasses import replace
+ from typing import Literal
+ 
+ import torch
+@@ -21,6 +22,7 @@
+     divide,
+ )
+ from vllm.forward_context import ForwardContext, get_forward_context
++from vllm.v1.kv_cache_interface import MambaSpec
+ from vllm.logger import init_logger
+ from vllm.model_executor.custom_op import CustomOp, PluggableLayer
+ from vllm.model_executor.layers.layernorm import RMSNormGated
+@@ -383,6 +385,22 @@
+             self.num_spec,
+         )
+ 
++    def get_kv_cache_spec(self, vllm_config: VllmConfig):
++        spec = super().get_kv_cache_spec(vllm_config)
++        if not isinstance(spec, MambaSpec):
++            return spec
++        # GDN prefill checkpoints: opt in to the backend-neutral prefill
++        # checkpoint machinery (one dedicated state block per request,
++        # written by the GDN layer when a checkpoint lands on a row end).
++        # Off by default (VLLM_GDN_PREFILL_CHECKPOINTS).
++        if envs.VLLM_GDN_PREFILL_CHECKPOINTS:
++            return replace(
++                spec,
++                num_prefill_checkpoint_blocks=1,
++                prefill_checkpoint_alignment=1,
++            )
++        return spec
++
+     def __init__(
+         self,
+         config: Qwen3NextConfig,
+@@ -836,6 +854,59 @@
+ 
+         return query, key, value
+ 
++    def _store_gdn_prefill_checkpoint(
++        self,
++        attn_metadata: "GDNAttentionMetadata",
++        last_recurrent_state: torch.Tensor,
++        ssm_state: torch.Tensor,
++        conv_state: torch.Tensor | None,
++    ) -> None:
++        """Export a row-end prefill checkpoint into its paged block.
++
++        The metadata builder resolves the stock checkpoint validity rules
++        (position inside the query, hash-aligned row start); the chunk
++        kernel returns exactly one final state per row, so the only row
++        whose final state IS the checkpoint state is a row whose checkpoint
++        coincides with the row end. All other rows are declined: their
++        allocated checkpoint block is left unwritten (null), never written
++        from a different state.
++
++        The conv portion of the checkpoint block is zero-filled: the
++        pre-conv input window is not in scope in every backend branch, and
++        a zero window perturbs at most the first (conv_kernel_size - 1)
++        resumed positions, deterministically.
++        """
++        meta = attn_metadata.checkpoint_meta
++        if meta is None:
++            return
++        offsets = meta.checkpoint_offsets
++        rows = attn_metadata.checkpoint_row_indices
++        if rows is None:
++            return
++        valid = offsets > 0
++        if not bool(valid.any()):
++            return
++        # Metadata rows are the non-spec request rows: decodes first, then
++        # prefills (the same peel the builder uses for prefill_state_indices).
++        n_decode = attn_metadata.num_decodes
++        n_prefill = attn_metadata.num_prefills
++        sel_i = torch.nonzero(valid).flatten()
++        is_prefill = (sel_i >= n_decode) & (sel_i < n_decode + n_prefill)
++        if not bool(is_prefill.any()):
++            return
++        sel_i = sel_i[is_prefill]
++        pidx = sel_i - n_decode
++        qsl = attn_metadata.prefill_query_start_loc
++        qlens = qsl[1:] - qsl[:-1]
++        row_end = offsets[sel_i] == qlens[pidx]
++        if not bool(row_end.any()):
++            return
++        pidx = pidx[row_end]
++        dst = meta.state_indices[sel_i][row_end]
++        ssm_state[dst] = last_recurrent_state[pidx].to(ssm_state.dtype)
++        if conv_state is not None:
++            conv_state[dst] = 0
++
+     def forward(
+         self,
+         hidden_states: torch.Tensor,
+@@ -1521,6 +1592,12 @@
+             )
+             # Init cache
+             ssm_state[prefill_state_indices] = last_recurrent_state.to(ssm_state.dtype)
++            self._store_gdn_prefill_checkpoint(
++                attn_metadata,
++                last_recurrent_state,
++                ssm_state,
++                conv_state,
++            )
+ 
+             if split_non_spec:
+                 # Stitch the peeled decode outputs in front of the prefill
+diff --git a/v1/attention/backends/gdn_attn.py b/v1/attention/backends/gdn_attn.py
+index ae8a943..6acfb41 100644
+--- a/v1/attention/backends/gdn_attn.py
++++ b/v1/attention/backends/gdn_attn.py
+@@ -21,6 +21,10 @@
+     mamba_get_block_table_tensor,
+     split_decodes_and_prefills,
+ )
++from vllm.model_executor.layers.mamba.checkpoint import (
++    MambaPrefillCheckpointBuilder,
++    MambaPrefillCheckpointMetadata,
++)
+ from vllm.v1.kv_cache_interface import MambaSpec
+ 
+ 
+@@ -75,6 +79,14 @@
+     prefill_state_indices: torch.Tensor | None = None
+     prefill_has_initial_state: torch.Tensor | None = None
+ 
++    # Internal prefill checkpoints. One entry per non-spec request row;
++    # None unless the GDN spec opts in and at least one row in this batch
++    # has a checkpoint (see MambaPrefillCheckpointBuilder.build). The chunk
++    # kernel returns one final state per row, so the layer writer only
++    # exports rows whose checkpoint coincides with the row end.
++    checkpoint_meta: MambaPrefillCheckpointMetadata | None = None
++    checkpoint_row_indices: torch.Tensor | None = None
++
+     # The following attributes are for triton implementation of causal_conv1d
+     nums_dict: dict | None = None
+     batch_ptr: torch.Tensor | None = None
+@@ -97,6 +109,9 @@
+         super().__init__(kv_cache_spec, layer_names, vllm_config, device)
+         self.compilation_config = vllm_config.compilation_config
+         self.speculative_config = vllm_config.speculative_config
++        self.checkpoint_builder = MambaPrefillCheckpointBuilder(
++            vllm_config, kv_cache_spec
++        )
+         from vllm.model_executor.layers.mamba.gdn.qwen_gdn_linear_attn import (
+             _resolve_gdn_prefill_backend,
+         )
+@@ -230,6 +245,9 @@
+     ) -> GDNAttentionMetadata:
+         m = common_attn_metadata
+ 
++        checkpoint_meta: MambaPrefillCheckpointMetadata | None = None
++        checkpoint_row_indices: torch.Tensor | None = None
++
+         query_start_loc = m.query_start_loc
+         query_start_loc_cpu = m.query_start_loc_cpu
+         nums_dict, batch_ptr, token_chunk_offset_ptr = None, None, None
+@@ -448,6 +466,27 @@
+             )
+ 
+         if num_prefills > 0:
++            # Internal prefill checkpoints (GDN): same contract as the
++            # Mamba2/KDA builders -- the stock validity rules decide which
++            # rows get a checkpoint block, and a row whose checkpoint is
++            # mid-query is declined by the writer (offset left unwritten),
++            # never written from the wrong state.
++            if self.vllm_config.cache_config.mamba_cache_mode == "align":
++                request_rows = list(range(m.num_reqs))
++                if spec_sequence_masks_cpu is not None:
++                    request_rows = [
++                        i
++                        for i in range(m.num_reqs)
++                        if not spec_sequence_masks_cpu[i]
++                    ]
++                checkpoint = self.checkpoint_builder.build(m, request_rows)
++                if checkpoint is not None:
++                    checkpoint_meta = checkpoint
++                    checkpoint_row_indices = async_tensor_h2d(
++                        request_rows,
++                        dtype=torch.int64,
++                        device=query_start_loc.device,
++                    )
+             context_lens_tensor = m.compute_num_computed_tokens()
+             has_initial_state = context_lens_tensor > 0
+             if spec_sequence_masks_cpu is not None:
+@@ -549,6 +588,8 @@
+             prefill_query_start_loc=prefill_query_start_loc,
+             prefill_state_indices=prefill_state_indices,
+             prefill_has_initial_state=prefill_has_initial_state,
++            checkpoint_meta=checkpoint_meta,
++            checkpoint_row_indices=checkpoint_row_indices,
+             spec_query_start_loc=spec_query_start_loc,
+             non_spec_query_start_loc=non_spec_query_start_loc,
+             spec_state_indices_tensor=spec_state_indices_tensor,
