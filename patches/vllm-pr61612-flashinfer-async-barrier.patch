@@ -18,7 +18,8 @@ batch launcher at #328's settings (PP=2 at 32,32, fp8 KV, 64 seqs, MAX_LEN 34000
 int8 prefill attention, GPU_UTIL 0.94, async scheduling on), and 24 concurrent agent conversations whose prompts grow
 to ~50k tokens, some with images, 60 minutes per run:
 
-  unpatched           illegal memory access at 8.0 and at 27.4 minutes (two runs)
+  unpatched           PP0's worker dies at 8.0 and at 27.4 minutes (two runs; the core dump of each names the
+                      merge kernel above)
   this patch          60 minutes, 769 requests ok, no 500s, no crash
   shortcut disabled   60 minutes, 755 requests ok, no 500s, no crash
                       (an earlier run with the shortcut's condition set to False by hand)
