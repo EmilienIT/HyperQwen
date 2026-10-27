@@ -187,6 +187,10 @@ docker compose exec single venv/bin/pip install pyarrow   # only on images publi
 docker compose exec single venv/bin/python bench/quality_battery.py mycard --gsm-only
 ```
 
+`mycard` is a label you choose for this run (for example `rtx3090-250w`),
+not a model name. Results are saved to `bench/quality-data/result_mycard.json`.
+Use your service name in place of `single` when testing another Compose profile.
+
 Then open a
 [field report](https://github.com/syv-ai/HyperQwen/issues/new?template=field-report.yml).
 The form asks for the six things that make two runs comparable — card, power
