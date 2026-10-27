@@ -16,23 +16,23 @@ The PR keeps the shortcut only when the scheduler is synchronous.
 Measured on a rented machine with two RTX 3090s (Threadripper 3975WX, driver 595.99), the 0.31.0 image with the
 batch launcher at #328's settings (PP=2 at 32,32, fp8 KV, 64 seqs, MAX_LEN 340000, prefix cache, vision with offload,
 int8 prefill attention, GPU_UTIL 0.94, async scheduling on), and 24 concurrent agent conversations whose prompts grow
-to ~35k tokens, some with images, 60 minutes per run:
+to ~50k tokens, some with images, 60 minutes per run:
 
   unpatched           illegal memory access at 8.0 and at 27.4 minutes (two runs)
   this patch          60 minutes, 769 requests ok, no 500s, no crash
   shortcut disabled   60 minutes, 755 requests ok, no 500s, no crash
-                      (the same condition forced off by hand, an earlier run)
+                      (an earlier run with the shortcut's condition set to False by hand)
 
-Each run was one boot, so this shows the crash going away on a box that hits it within half an hour; it does not
-bound how rare a crash could be with the patch. The 400s in every run are the load's second-image requests, refused by
-the one-image limit.
+That is two runs on each side, on one machine. The crash goes away on a box that hits it within half an hour, but two
+clean hours do not bound how rare a crash could still be with the patch. The 400s in every run are the load's
+second-image requests, refused by the one-image limit.
 
 Applied unchanged: the PR's flashinfer.py hunks cherry-pick onto 0.31.0 without conflicts (its pre-commit workflow
 hunk is not part of this patch).
 
 Kind: fix
-What: with async scheduling on, FlashInfer's metadata builder takes the blocking seq_lens.cpu() again, so the next
-  step's plan cannot rewrite the pinned plan buffer before the current step's copy reads it
+What: with async scheduling on, FlashInfer's metadata builder takes the blocking seq_lens.cpu() again, the host
+  barrier between steps that vllm #57214 dropped
 Upstream: vllm #61612 (open); #61622 (open) is a larger alternative; the regression is from vllm #57214
 Cut-against: 0.31.0
 Retires-when: the pin that carries #61612 or #61622
