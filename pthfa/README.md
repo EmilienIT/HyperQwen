@@ -9,6 +9,12 @@ this package is installed (`PTH_FA=0` opts out; `docs/gotchas.md`, item 63); not
 does. It is a separate extension, not a patch to vLLM, which is why it lives here and not in `patches/`:
 no vLLM file changes, and `patches/check_vllm_series.sh` is untouched by it.
 
+PTH_FA inherits Triton's scale-view creation and cache writer; selecting
+`CUSTOM` does not isolate it from bugs in those methods. The series carries
+`quant-scale-view-preserve-pages.patch` (vLLM #64141/#63944) so first-use view
+creation preserves live hybrid state and existing shared KV scales rather than
+filling their storage. This applies to the 0.31 pin as well as 0.32.
+
 ## What is vendored, and from where
 
 `PIN` names the commit. `csrc/` and `python/` are the output of `tools/export_upstream.py --out` at that
@@ -49,6 +55,9 @@ reason (`docs/gotchas.md`, item 63). The library reads no environment variables.
 ## Tests
 
 - `pthfa/tests/gate_test.py` (CPU): the items above, against the venv's vLLM.
+- `bench/test_quant_scale_views.py` (CPU, optional `--device cuda:0`): unchanged
+  shared pages on Triton/PTH_FA view creation, existing scales on a second
+  layer, inline alias offsets, and on GPU the real INT8 cache writer.
 - `bench/test_pthfa_knob.sh` (CPU): `PTH_FA` in the launchers, against a stub `vllm`.
 - `bench/test_pthfa_attn.py` (GPU): the op against an fp64 reference on the cache it reads, including a pool
   past block id 2,383 (#86/#109), CUDA-graph replay and the DFlash2 drafter's windowed, non-causal shapes;
