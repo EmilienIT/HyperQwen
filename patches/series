@@ -66,3 +66,4 @@ vllm-pr61050-lru-running-prefix.patch
 kv-cache-seat-budget.patch
 vllm-pr61612-flashinfer-async-barrier.patch
 quant-scale-view-preserve-pages.patch
+dflash-context-capacity.patch
