@@ -1,0 +1,353 @@
+Export both convolution history and recurrent state at the exact interior
+positions selected by the shared allocator. Recompute normalized prefill
+prefixes through the existing FLA chunk kernel; keep full-row outputs intact.
+Default off; explicit opt-in requires CUDA Triton/FLA and align caching.
+Disable cross-group metadata reuse for checkpoint-enabled GDN groups.
+Prefix recomputation is a correctness implementation, not a performance claim.
+
+Kind: feature
+What: opt-in exact interior GDN convolution and recurrent checkpoints by prefix recomputation
+Upstream: HyperQwen PR #392
+Cut-against: 0.31.0
+Retires-when: upstream GDN exports exact interior checkpoint states
+
+--- exported from 846d989 (gdn-prefill-exact-checkpoints); regenerate with scripts/export-patch.sh, do not edit ---
+
+diff --git a/model_executor/layers/mamba/checkpoint.py b/model_executor/layers/mamba/checkpoint.py
+index 3ba4062..ffead52 100644
+--- a/model_executor/layers/mamba/checkpoint.py
++++ b/model_executor/layers/mamba/checkpoint.py
+@@ -62,6 +62,7 @@
+ class MambaPrefillCheckpointMetadata:
+     checkpoint_offsets: torch.Tensor
+     state_indices: torch.Tensor
++    checkpoint_offsets_cpu: list[int] | None = None
+ 
+ 
+ class MambaPrefillCheckpointBuilder:
+@@ -120,6 +121,7 @@
+         return MambaPrefillCheckpointMetadata(
+             checkpoint_offsets_tensor,
+             checkpoint_state_indices,
++            checkpoint_offsets_cpu=checkpoint_offsets,
+         )
+ 
+ 
+diff --git a/model_executor/layers/mamba/gdn/qwen_gdn_linear_attn.py b/model_executor/layers/mamba/gdn/qwen_gdn_linear_attn.py
+index 55bd8e3..5c34044 100644
+--- a/model_executor/layers/mamba/gdn/qwen_gdn_linear_attn.py
++++ b/model_executor/layers/mamba/gdn/qwen_gdn_linear_attn.py
+@@ -3,6 +3,7 @@
+ """Inference-only Qwen3-Next/Qwen3.5 model."""
+ 
+ import os
++from dataclasses import replace
+ from typing import Literal
+ 
+ import torch
+@@ -388,17 +389,19 @@
+         spec = super().get_kv_cache_spec(vllm_config)
+         if not isinstance(spec, MambaSpec):
+             return spec
+-        # The allocator selects positions strictly inside a query; the current
+-        # GDN kernel returns only its final row state. Declining in the writer
+-        # cannot cancel the manager's publication of the reserved block, so
+-        # enabling this incomplete exporter would cache uninitialized state.
+         if envs.VLLM_GDN_PREFILL_CHECKPOINTS:
+-            raise RuntimeError(
+-                "VLLM_GDN_PREFILL_CHECKPOINTS is unavailable: the GDN backend "
+-                "must export the exact interior checkpoint and convolution "
+-                "state before checkpoint allocation can be enabled. Unset "
+-                "VLLM_GDN_PREFILL_CHECKPOINTS or set it to 0."
+-            )
++            if vllm_config.cache_config.mamba_cache_mode != "align":
++                raise RuntimeError("GDN prefill checkpoints require mamba_cache_mode=align")
++            # Only the tested CUDA Triton/FLA prefill path exports checkpoints.
++            # Unsupported paths must not reserve blocks they cannot write.
++            if (not current_platform.is_cuda()
++                    or _resolve_gdn_prefill_backend(vllm_config)[1] != "triton"):
++                raise RuntimeError(
++                    "GDN prefill checkpoints require the CUDA Triton/FLA "
++                    "prefill backend. Select gdn_prefill_backend=triton."
++                )
++            return replace(spec, num_prefill_checkpoint_blocks=1,
++                           prefill_checkpoint_alignment=1)
+         return spec
+ 
+     def __init__(
+@@ -854,58 +857,61 @@
+ 
+         return query, key, value
+ 
++    def _store_gdn_checkpoint_conv(
++        self, attn_metadata, raw_qkv: torch.Tensor,
++        conv_state: torch.Tensor,
++    ) -> None:
++        """Save the exact pre-convolution history before normal cache updates."""
++        plan = attn_metadata.checkpoint_plan
++        if plan is None:
++            return
++        width = self.conv_kernel_size - 1
++        for i, ((_, length), start) in enumerate(
++            zip(plan.source_slices, plan.conv_source_starts)
++        ):
++            dst = plan.state_indices[i:i + 1]
++            history = raw_qkv[start:start + length].transpose(0, 1)
++            if length < width:
++                rows = plan.non_spec_rows[i:i + 1]
++                src = attn_metadata.non_spec_state_indices_tensor.index_select(0, rows)
++                initial = conv_state.index_select(0, src.to(torch.int64))[..., :width]
++                has_initial = attn_metadata.has_initial_state.index_select(0, rows)
++                initial = torch.where(has_initial[:, None, None], initial, 0)
++                history = torch.cat((initial.squeeze(0), history.to(initial.dtype)), dim=-1)
++            # Extra speculative slots are scratch, not part of the resumed
++            # convolution history. A fresh request starts at accepted index 1.
++            saved = torch.zeros_like(conv_state.index_select(0, dst))
++            saved[..., :width] = history[..., -width:].to(saved.dtype)
++            conv_state.index_copy_(0, dst, saved)
++
+     def _store_gdn_prefill_checkpoint(
+-        self,
+-        attn_metadata: "GDNAttentionMetadata",
+-        last_recurrent_state: torch.Tensor,
+-        ssm_state: torch.Tensor,
+-        conv_state: torch.Tensor | None,
++        self, attn_metadata, initial_state, q, k, v, g, beta, ssm_state,
+     ) -> None:
+-        """Export a row-end prefill checkpoint into its paged block.
+-
+-        The metadata builder resolves the stock checkpoint validity rules
+-        (position inside the query, hash-aligned row start); the chunk
+-        kernel returns exactly one final state per row, so the only row
+-        whose final state IS the checkpoint state is a row whose checkpoint
+-        coincides with the row end. All other rows are declined: their
+-        allocated checkpoint block is left unwritten (null), never written
+-        from a different state.
+-
+-        The conv portion of the checkpoint block is zero-filled: the
+-        pre-conv input window is not in scope in every backend branch, and
+-        a zero window perturbs at most the first (conv_kernel_size - 1)
+-        resumed positions, deterministically.
++        """Recompute selected prefixes; never substitute a full row's end state.
++
++        Convolution is already causal and normalized Q/K/V/g/beta can be
++        cropped directly. Prefix FLA metadata is prepared on the CPU by the
++        builder, so exporting adds no device-to-host synchronization.
+         """
+-        meta = attn_metadata.checkpoint_meta
+-        if meta is None:
+-            return
+-        offsets = meta.checkpoint_offsets
+-        rows = attn_metadata.checkpoint_row_indices
+-        if rows is None:
+-            return
+-        valid = offsets > 0
+-        if not bool(valid.any()):
+-            return
+-        # Metadata rows are the non-spec request rows: decodes first, then
+-        # prefills (the same peel the builder uses for prefill_state_indices).
+-        n_decode = attn_metadata.num_decodes
+-        n_prefill = attn_metadata.num_prefills
+-        sel_i = torch.nonzero(valid).flatten()
+-        is_prefill = (sel_i >= n_decode) & (sel_i < n_decode + n_prefill)
+-        if not bool(is_prefill.any()):
+-            return
+-        sel_i = sel_i[is_prefill]
+-        pidx = sel_i - n_decode
+-        qsl = attn_metadata.prefill_query_start_loc
+-        qlens = qsl[1:] - qsl[:-1]
+-        row_end = offsets[sel_i] == qlens[pidx]
+-        if not bool(row_end.any()):
++        plan = attn_metadata.checkpoint_plan
++        if plan is None:
+             return
+-        pidx = pidx[row_end]
+-        dst = meta.state_indices[sel_i][row_end]
+-        ssm_state[dst] = last_recurrent_state[pidx].to(ssm_state.dtype)
+-        if conv_state is not None:
+-            conv_state[dst] = 0
++
++        def crop(value):
++            return torch.cat([value[:, start:start + length]
++                              for start, length in plan.source_slices], dim=1)
++
++        _, checkpoints = self.chunk_gated_delta_rule(
++            q=crop(q), k=crop(k), v=crop(v), g=crop(g), beta=crop(beta),
++            initial_state=initial_state.index_select(0, plan.prefill_rows),
++            output_final_state=True,
++            cu_seqlens=plan.query_start_loc,
++            chunk_indices=plan.chunk_indices,
++            chunk_offsets=plan.chunk_offsets,
++            use_qk_l2norm_in_kernel=False,
++        )
++        ssm_state.index_copy_(0, plan.state_indices,
++                              checkpoints.to(ssm_state.dtype))
+ 
+     def forward(
+         self,
+@@ -1418,6 +1424,11 @@
+                 validate_data=False,
+             )
+ 
++        if attn_metadata.checkpoint_plan is not None:
++            assert mixed_qkv_non_spec is not None
++            self._store_gdn_checkpoint_conv(attn_metadata, mixed_qkv_non_spec,
++                                             conv_state)
++
+         # 1.2: Process the remaining part
+         if attn_metadata.num_prefills > 0:
+             assert mixed_qkv_non_spec is not None
+@@ -1574,6 +1585,10 @@
+             assert prefill_has_initial_state is not None
+             initial_state = ssm_state[prefill_state_indices]
+             initial_state[~prefill_has_initial_state, ...] = 0
++            self._store_gdn_prefill_checkpoint(
++                attn_metadata, initial_state, query_non_spec, key_non_spec,
++                value_non_spec, g_non_spec, beta_non_spec, ssm_state,
++            )
+             (
+                 core_attn_out_non_spec,
+                 last_recurrent_state,
+@@ -1592,12 +1607,6 @@
+             )
+             # Init cache
+             ssm_state[prefill_state_indices] = last_recurrent_state.to(ssm_state.dtype)
+-            self._store_gdn_prefill_checkpoint(
+-                attn_metadata,
+-                last_recurrent_state,
+-                ssm_state,
+-                conv_state,
+-            )
+ 
+             if split_non_spec:
+                 # Stitch the peeled decode outputs in front of the prefill
+diff --git a/v1/attention/backends/gdn_attn.py b/v1/attention/backends/gdn_attn.py
+index 6acfb41..6c80a23 100644
+--- a/v1/attention/backends/gdn_attn.py
++++ b/v1/attention/backends/gdn_attn.py
+@@ -42,6 +42,19 @@
+         return True
+ 
+ 
++@dataclass
++class GDNPrefillCheckpointPlan:
++    # All Python values are derived from CPU scheduling metadata, once per step.
++    source_slices: list[tuple[int, int]]
++    conv_source_starts: list[int]
++    prefill_rows: torch.Tensor
++    non_spec_rows: torch.Tensor
++    state_indices: torch.Tensor
++    query_start_loc: torch.Tensor
++    chunk_indices: torch.Tensor | None
++    chunk_offsets: torch.Tensor | None
++
++
+ @dataclass
+ class GDNAttentionMetadata:
+     num_prefills: int
+@@ -82,8 +95,8 @@
+     # Internal prefill checkpoints. One entry per non-spec request row;
+     # None unless the GDN spec opts in and at least one row in this batch
+     # has a checkpoint (see MambaPrefillCheckpointBuilder.build). The chunk
+-    # kernel returns one final state per row, so the layer writer only
+-    # exports rows whose checkpoint coincides with the row end.
++    # plan crops eligible prefixes for exact recurrent/conv export.
++    checkpoint_plan: GDNPrefillCheckpointPlan | None = None
+     checkpoint_meta: MambaPrefillCheckpointMetadata | None = None
+     checkpoint_row_indices: torch.Tensor | None = None
+ 
+@@ -138,6 +151,7 @@
+             and device.type == "cuda"
+             # Not isinstance: KDA's RecoverSSM/checkpoint metadata is per group.
+             and type(self) is GDNAttentionMetadataBuilder
++            and kv_cache_spec.num_prefill_checkpoint_blocks == 0
+         )
+         if self.supports_update_block_table:
+             # Opts into MRV2's CUDA-only aligned-index precompute.
+@@ -235,6 +249,41 @@
+             ),
+         )
+ 
++    def _build_checkpoint_plan(
++        self, checkpoint: MambaPrefillCheckpointMetadata,
++        num_decodes: int, num_decode_tokens: int,
++        non_spec_query_start_loc_cpu: torch.Tensor, device: torch.device,
++    ) -> GDNPrefillCheckpointPlan | None:
++        offsets = checkpoint.checkpoint_offsets_cpu
++        assert offsets is not None
++        # Geometry alone is not an allocation acknowledgement. The scheduler
++        # does not reserve checkpoints for intermediate prefill chunks, and
++        # represents their positions with the null block. Read the small list
++        # once per metadata build; never write into the shared null state.
++        destinations = checkpoint.state_indices.cpu().tolist()
++        selected = [i for i, offset in enumerate(offsets)
++                    if i >= num_decodes and offset > 0
++                    and destinations[i] != NULL_BLOCK_ID]
++        if not selected:
++            return None
++        starts = non_spec_query_start_loc_cpu.tolist()
++        lengths = [offsets[i] for i in selected]
++        cu_cpu = torch.tensor([0, *torch.tensor(lengths).cumsum(0).tolist()],
++                              dtype=torch.int32)
++        cu = async_tensor_h2d(cu_cpu.tolist(), dtype=torch.int32, device=device)
++        ci, co = self._build_chunk_metadata(cu, cu_cpu, device)
++        rows = async_tensor_h2d(selected, dtype=torch.int64, device=device)
++        return GDNPrefillCheckpointPlan(
++            source_slices=[(starts[i] - num_decode_tokens, offsets[i]) for i in selected],
++            conv_source_starts=[starts[i] for i in selected],
++            prefill_rows=rows - num_decodes,
++            non_spec_rows=rows,
++            state_indices=checkpoint.state_indices.index_select(0, rows).to(torch.int64),
++            query_start_loc=cu,
++            chunk_indices=ci,
++            chunk_offsets=co,
++        )
++
+     def build(  # type: ignore[override]
+         self,
+         common_prefix_len: int,
+@@ -245,6 +294,7 @@
+     ) -> GDNAttentionMetadata:
+         m = common_attn_metadata
+ 
++        checkpoint_plan: GDNPrefillCheckpointPlan | None = None
+         checkpoint_meta: MambaPrefillCheckpointMetadata | None = None
+         checkpoint_row_indices: torch.Tensor | None = None
+ 
+@@ -466,11 +516,9 @@
+             )
+ 
+         if num_prefills > 0:
+-            # Internal prefill checkpoints (GDN): same contract as the
+-            # Mamba2/KDA builders -- the stock validity rules decide which
+-            # rows get a checkpoint block, and a row whose checkpoint is
+-            # mid-query is declined by the writer (offset left unwritten),
+-            # never written from the wrong state.
++            # Use the allocator's exact interior positions and prepare one
++            # prefix-recompute plan per group. Every reserved GDN checkpoint
++            # is written before a successful forward can publish it.
+             if self.vllm_config.cache_config.mamba_cache_mode == "align":
+                 request_rows = list(range(m.num_reqs))
+                 if spec_sequence_masks_cpu is not None:
+@@ -482,6 +530,13 @@
+                 checkpoint = self.checkpoint_builder.build(m, request_rows)
+                 if checkpoint is not None:
+                     checkpoint_meta = checkpoint
++                    if type(self) is GDNAttentionMetadataBuilder:
++                        assert non_spec_query_start_loc_cpu is not None
++                        checkpoint_plan = self._build_checkpoint_plan(
++                            checkpoint, num_decodes,
++                            num_decode_tokens if spec_sequence_masks is None else 0,
++                            non_spec_query_start_loc_cpu, query_start_loc.device,
++                        )
+                     checkpoint_row_indices = async_tensor_h2d(
+                         request_rows,
+                         dtype=torch.int64,
+@@ -588,6 +643,7 @@
+             prefill_query_start_loc=prefill_query_start_loc,
+             prefill_state_indices=prefill_state_indices,
+             prefill_has_initial_state=prefill_has_initial_state,
++            checkpoint_plan=checkpoint_plan,
+             checkpoint_meta=checkpoint_meta,
+             checkpoint_row_indices=checkpoint_row_indices,
+             spec_query_start_loc=spec_query_start_loc,

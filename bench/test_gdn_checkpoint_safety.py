@@ -54,6 +54,8 @@ class CheckpointSafetyTests(unittest.TestCase):
                   function(root / "v1/core/single_type_kv_cache_manager.py", "_cache_partial_tail_block", "MambaManager")]
         cls.envs = NS(VLLM_GDN_PREFILL_CHECKPOINTS=False)
         cls.scope = dict(Base=Base, MambaSpec=Spec, replace=replace, envs=cls.envs,
+                         current_platform=NS(is_cuda=lambda: True),
+                         _resolve_gdn_prefill_backend=lambda config: ("triton", "triton"),
                          cdiv=lambda x, y: (x + y - 1) // y)
         module = ast.Module(body=[ast.ImportFrom(module="__future__", names=[ast.alias(name="annotations")], level=0),
                                  wrapper, *nodes], type_ignores=[])
@@ -74,12 +76,33 @@ class CheckpointSafetyTests(unittest.TestCase):
         spec = object()
         self.assertIs(self.layer(spec).get_kv_cache_spec(object()), spec)
 
-    def test_enabled_incomplete_export_fails_before_checkpoint_allocation(self):
+    def test_enabled_export_reserves_exactly_one_interior_block(self):
         self.envs.VLLM_GDN_PREFILL_CHECKPOINTS = True
         spec = Spec()
-        with self.assertRaisesRegex(RuntimeError, "interior checkpoint"):
-            self.layer(spec).get_kv_cache_spec(object())
+        config = NS(cache_config=NS(mamba_cache_mode="align"))
+        selected = self.layer(spec).get_kv_cache_spec(config)
+        self.assertEqual(selected.num_prefill_checkpoint_blocks, 1)
+        self.assertEqual(selected.prefill_checkpoint_alignment, 1)
         self.assertEqual(spec, Spec())
+
+    def test_unsupported_backend_and_cache_mode_refuse_before_allocation(self):
+        self.envs.VLLM_GDN_PREFILL_CHECKPOINTS = True
+        config = NS(cache_config=NS(mamba_cache_mode="all"))
+        with self.assertRaisesRegex(RuntimeError, "mamba_cache_mode=align"):
+            self.layer(Spec()).get_kv_cache_spec(config)
+        config.cache_config.mamba_cache_mode = "align"
+        self.scope["current_platform"] = NS(is_cuda=lambda: False)
+        try:
+            with self.assertRaisesRegex(RuntimeError, "CUDA Triton/FLA"):
+                self.layer(Spec()).get_kv_cache_spec(config)
+        finally:
+            self.scope["current_platform"] = NS(is_cuda=lambda: True)
+        self.scope["_resolve_gdn_prefill_backend"] = lambda config: ("flashinfer", "flashinfer")
+        try:
+            with self.assertRaisesRegex(RuntimeError, "CUDA Triton/FLA"):
+                self.layer(Spec()).get_kv_cache_spec(config)
+        finally:
+            self.scope["_resolve_gdn_prefill_backend"] = lambda config: ("triton", "triton")
 
     def test_allocator_valid_positions_cannot_be_row_ends(self):
         compute = self.scope["compute_mamba_prefill_checkpoints"]
