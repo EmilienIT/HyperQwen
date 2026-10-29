@@ -5,13 +5,15 @@ Default off; explicit opt-in requires CUDA Triton/FLA and align caching.
 Disable cross-group metadata reuse for checkpoint-enabled GDN groups.
 Prefix recomputation is a correctness implementation, not a performance claim.
 
+Supersedes: gdn-prefill-checkpoints.patch
+
 Kind: feature
 What: opt-in exact interior GDN convolution and recurrent checkpoints by prefix recomputation
 Upstream: HyperQwen PR #392
 Cut-against: 0.31.0
 Retires-when: upstream GDN exports exact interior checkpoint states
 
---- exported from 846d989 (gdn-prefill-exact-checkpoints); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from e41fe24 (gdn-prefill-exact-checkpoints); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/model_executor/layers/mamba/checkpoint.py b/model_executor/layers/mamba/checkpoint.py
 index 3ba4062..ffead52 100644
