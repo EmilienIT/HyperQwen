@@ -5,7 +5,7 @@ from displayed concurrency, matching engine admission and auto-fit.
 Kind: fix
 What: account for async Mamba states and usable grouped KV capacity
 Upstream: none yet
-Cut-against: 0.31.0
+Cut-against: 0.32.0
 Retires-when: upstream accounts for async states and usable grouped capacity
 
 --- exported from 2ca8e2d (async-mamba-kv-sizing); regenerate with scripts/export-patch.sh, do not edit ---
