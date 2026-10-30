@@ -117,6 +117,14 @@ TRITON_ATTN --max-model-len 262144` (batch/start_qwen.sh: `KV=int4pth`).
 
 ## DFlash2 past 64k (`SPEC=dflash2 CTX=long`)
 
+The target context plus DFlash's fixed bonus-and-draft lookahead must fit the
+configured drafter context capacity. Startup refuses an oversized combination
+before GPU inference; the error names the supported target limit. Reduce
+`MAX_LEN` / `DFLASH_MAX_LEN`, or use a drafter explicitly configured for the
+larger context. Fetching a drafter does not extend its positional configuration.
+The shipped profiles fit the 262,144-token drafter with room for lookahead.
+
+
 The block drafter was pinned to `CTX=fast` — bf16 KV on FlashAttention, 64k at
 `DFLASH_TOKENS=7` and 56k at 15 — because bf16 KV is 64 KB per token and the pinned
 5.2 GiB pool is exactly that much. `CTX=long` moves it to an `int8_per_token_head` cache

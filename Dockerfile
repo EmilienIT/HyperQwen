@@ -50,6 +50,7 @@ RUN set -e; SP=$(venv/bin/python -c 'import vllm, os; print(os.path.dirname(vllm
     bash patches/apply.sh "$SP"; \
     bash kvarn/install.sh; \
     bash verify.sh --install; \
+    venv/bin/python bench/test_dflash_context_capacity.py; \
     venv/bin/python bench/mq3d_scratch_pool_test.py; \
     CUDA_VISIBLE_DEVICES= venv/bin/python pthfa/tests/gate_test.py; \
     venv/bin/python fa2/tests/gate_test.py; \
