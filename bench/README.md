@@ -122,6 +122,7 @@ One test outside `bench/` gates CI too:
 | `kvarn/tests/test_kvarn_fp16_dequant_torch.py` | test | torch | 0 or 1 | Numerics of `KVARN_FP16_DEQUANT`. |
 
 ## Async Mamba KV sizing
+## Continuous usage while tool parsing buffers output
 
 After installing the pinned vLLM and applying `patches/series`, run:
 
@@ -136,3 +137,8 @@ A replay fixture checks all 99 allocator snapshots from a 163K-token prefill,
 including its 219-block peak. The residency-log fixtures retain the older boot
 metrics while checking the corrected conservative async estimates. No model
 or GPU is needed. The Docker build runs both suites after applying the patches.
+CUDA_VISIBLE_DEVICES= venv/bin/python bench/test_continuous_stream_usage.py
+This uses Qwen's parser and the chat streaming generator with synthetic engine
+outputs. It checks continuous counts during a buffered array argument, hidden
+reasoning, final-only usage and no-usage streams. No model or GPU is needed.
+The Docker build runs the same regression after applying the patches.
