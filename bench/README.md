@@ -49,9 +49,9 @@ none, and the `.sh` scripts ask `/v1/models`. The `.sh` measurements take `PORT`
 | `interleave_dose.py` | measurement | server | 0 | Prefix reuse against a dose of interleaved traffic, with the single-conversation control. |
 | `labd_accept.py` | measurement | server | 0, or 1 if the server ignores `return_tokens_as_token_ids` | Teacher-forced tokens per step for lookup-augmented drafting. |
 | `labd_bench.py` | measurement | server | 0 | Six long-context greedy tasks: decode speed and tokens per step. |
-| `labd_corpus.py` | library | CPU | n/a | Reuses a nonblank frozen corpus without rewriting it, or builds this checkout's docs on first run. A missing `labd_corpus_long.txt` must be built with `make_long_corpus.py`. Blank existing inputs are refused with rebuild instructions. |
+| `labd_corpus.py` | library | CPU | n/a | Reuses a nonblank frozen corpus without rewriting it, or builds this checkout's docs on first run. A missing `labd_corpus_long.txt` must be built with `make_long_corpus.py`. A blank frozen head is refused even when a long corpus has a nonblank source tail. |
 | `labd_soak.py` | test | server | 0 or 1 | The long verify block at batch > 1. |
-| `make_long_corpus.py` | data tool | `~/bench/labd_corpus.txt`, vLLM source | 0, or 1 if an input is missing | Builds the long-context LABD corpus. |
+| `make_long_corpus.py` | data tool | `~/bench/labd_corpus.txt`, vLLM source | 0, or 1 if an input is missing or blank | Builds the long-context LABD corpus without extending a blank frozen head. |
 | `mq3d_capacity_property.py` | test | CPU | 0, 1, 2 if no batch was eligible, 3 if `--mutate` did not break the property | The int4 3D scratch capacity property. `--mutate seq-rows` is its negative control and exits 0 when it breaks the property. |
 | `mq3d_layer2_oracle.py` | test | GPU | 0 or 1 | Independent Layer-2 oracle for the int4 3D scratch patch. Writes `mq3d_layer2_verdicts.jsonl` beside itself unless `ORACLE_OUT` is set. |
 | `mq3d_layer2_verdicts.jsonl` | data | | | The oracle's records from the 4090 run. |
@@ -77,7 +77,7 @@ none, and the `.sh` scripts ask `/v1/models`. The `.sh` measurements take `PORT`
 | `test_kv_cache_seat_budget.py` | test | image | 0 or 1 | The KV cache seat budget line (`kv-cache-seat-budget.patch`) against five measured boots, with vLLM's own spec classes. |
 | `test_kvarn_recycled_pages.py` | test | image | 0 or 1 | KVarN's recycled-page drop (#208). |
 | `test_labd_bench_clock.py` | test | CPU | 0 or 1 | `labd_bench.py` against a stub server, with the wall clock stepped back: TTFT and decode rate as the stub served them. |
-| `test_labd_corpus.py` | test | CPU | 0 or 1 | Both LABD scripts on a fresh checkout and an existing frozen corpus; missing documentation and relative corpus paths. |
+| `test_labd_corpus.py` | test | CPU | 0 or 1 | LABD corpus discovery/reuse, blank frozen heads, and rejection in benchmarks, soak and sweeps before requests or tokenizer loading. |
 | `test_long_corpus.py` | test | CPU | 0 or 1 | Explicit/checkout/fallback source selection without importing vLLM, missing-source/cohort refusals and byte-preserved frozen heads. |
 | `test_lookup_kernels.py` | kernel test | GPU | 0 or 1 | The LABD kernels against a Python reference. |
 | `test_marlin_int8_asym.py` | kernel test | GPU | 0 or 1 | Marlin W4A8-INT8 with zero points against W4A16. |
