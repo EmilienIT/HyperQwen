@@ -115,6 +115,27 @@ class SlabTests(unittest.TestCase):
                     slabs=len(slabs(seq, qlen)), full_fa2_normalized_rms=rms,
                     fp32_normalized_rms=oracle_rms, gather_bit_exact=True)), flush=True)
 
+    def test_a_second_stream_takes_the_workspace_over_after_the_first_finishes(self):
+        # The stream that serves requests is not the one that ran warm-up; the workspace must follow it,
+        # and only once the previous owner's queued work is done.
+        ws = SlabWorkspace(torch.device('cuda', torch.cuda.current_device()))
+        first, second = torch.cuda.Stream(), torch.cuda.Stream()
+        with torch.cuda.stream(first):
+            self.assertTrue(ws.claim_stream())
+            torch.cuda._sleep(500_000_000)
+        self.assertEqual(ws.owner_stream, first.cuda_stream)
+        with torch.cuda.stream(second):
+            self.assertTrue(ws.claim_stream())
+            done = torch.cuda.Event()
+            done.record()
+        self.assertEqual(ws.owner_stream, second.cuda_stream)
+        self.assertFalse(done.query(), 'the new owner must wait for the previous owner\'s queued work')
+        torch.cuda.synchronize()
+        self.assertTrue(done.query())
+        with torch.cuda.stream(first):
+            self.assertTrue(ws.claim_stream())
+        self.assertEqual(ws.owner_stream, first.cuda_stream)
+
     def test_merge_is_stable_for_extreme_lse_and_empty_partitions(self):
         qlen = 3
         part = torch.randn((qlen, 24, 256), dtype=torch.bfloat16, device='cuda')

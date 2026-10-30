@@ -79,13 +79,21 @@ class SlabWorkspace:
         self.cu_k = torch.empty(2, dtype=torch.int32, device=device)
         self.allocation_stream = torch.cuda.current_stream(device)
         self.owner_stream = None
+        self._owner = None
 
     def claim_stream(self):
         stream = torch.cuda.current_stream(self.device)
         if self.owner_stream is None:
             stream.wait_stream(self.allocation_stream)
-            self.owner_stream = stream.cuda_stream
-        return self.owner_stream == stream.cuda_stream
+        elif self.owner_stream != stream.cuda_stream:
+            # The stream that runs real requests is not the one that ran warm-up (vLLM 0.32 executes the
+            # model on a different stream), and an owner that never changes would refuse every real chunk.
+            # A new stream takes the workspace over only after everything the previous owner queued has
+            # finished, so the K/V slab and the partials are never in use by two streams at once.
+            stream.wait_stream(self._owner)
+        self.owner_stream = stream.cuda_stream
+        self._owner = stream
+        return True
 
     def run(self, query, caches, block_table, cu_q, sequence_len, scale, output):
         from vllm.v1.attention.backends.fa_utils import flash_attn_varlen_func

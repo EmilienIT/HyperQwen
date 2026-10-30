@@ -45,7 +45,10 @@ Sequence lengths come from host metadata without GPU-to-host scalar reads.
 | **Total** | **136.1875 MiB + 8 bytes** |
 
 The workspace is reserved at model construction, before KV-pool sizing, shared
-across the serving stack, and restricted to one CUDA stream. It does not grow
+across the serving stack, and used by one CUDA stream at a time: the first stream to run it owns it, and a
+later stream takes it over only after everything the previous owner queued has finished (vLLM 0.32 runs warm-up
+and real requests on different streams, and a workspace pinned to the warm-up stream never engaged: measured
+identical to native PTH at 35k, 75k and 128k tokens until this takeover rule). It does not grow
 with context length. FA2's small transient internal/LSE allocations are additional.
 Chunks above 2,048 tokens fall back to native PTH. Floating-point rounding can
 differ from native PTH or one full-buffer FA2 call, including generated tokens;
