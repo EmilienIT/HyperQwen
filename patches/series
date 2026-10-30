@@ -64,6 +64,7 @@ qwen3_5-embed-uva.patch
 vllm-pr40371-prompt-progress.patch
 vllm-pr61050-lru-running-prefix.patch
 kv-cache-seat-budget.patch
+gdn-ba-pad-small-m.patch
 vllm-pr61612-flashinfer-async-barrier.patch
 quant-scale-view-preserve-pages.patch
 dflash-context-capacity.patch
