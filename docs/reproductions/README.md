@@ -275,6 +275,22 @@ other only loosely, and not rows for either table above:
   Run with `KV=kvarn VISION=1` rather than the reference batch profile, so
   indicative rather than a controlled row:
   [#135](https://github.com/syv-ai/HyperQwen/issues/135).
+- **RTX 3090, Windows 11 / WSL2 + Docker Desktop, single user, `SPEC=mtp CTX=long`
+  at a 180,222-token window (main at ce9615c, vLLM 0.31)**: on sm86 the launcher
+  puts int8 KV on the PTH_FA (`CUSTOM`) backend, and that profile does not pay the
+  Triton long-context tax in the batch table: 80.9 tok/s short-prompt decode
+  (bf16 read 80.6), a 210,004-token pool (1.17x the window), and cold/warm
+  decode of 102.5/104.6 at 8k, 72.1/75.5 at 64k and 56.8/66.3 at 170k, with cold
+  prefill 1,275 / 1,019 / 720 tok/s at 8k / 64k / 170k (236 s to first token at
+  170k). Two needle codes were retrieved at 64k and 170k. The int4 `TRITON_ATTN`
+  rows on the same box read 48-52 tok/s on the non-fast weights (the `-fast`
+  variant mattered more at short context than the KV dtype, inferred, not a clean
+  A/B). WSL2 notes from the thread: vLLM saw 22.75 GiB free of 24, so
+  `alternative.sh` at its old 0.95 default would not start (it now defaults to
+  0.93 there, [#419](https://github.com/syv-ai/HyperQwen/pull/419)); and
+  raising WSL2 `processors` from 16 to 24 in `.wslconfig` improved prefill on
+  this card in the reporter's earlier comparisons
+  ([#401](https://github.com/syv-ai/HyperQwen/issues/401)).
 - **Dual-GPU reports**: the controlled 1-vs-2×3090 A/B in
   [#40](https://github.com/syv-ai/HyperQwen/issues/40) (+16–35%,
   161.6 C1 greedy at 275 W, PCIe x8 without NVLink; independently reproduced
