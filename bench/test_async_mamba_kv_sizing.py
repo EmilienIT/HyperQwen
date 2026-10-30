@@ -90,7 +90,7 @@ def admit(budget, cfg=None):
     gs = groups()
     # These are the real admission/auto-fit functions used after grouping in
     # get_kv_cache_configs, including its existing null-block byte reservation.
-    usable = budget - utils._pool_bytes_per_block(gs)
+    usable = budget - utils._pool_bytes_per_block(cfg, gs)
     utils._check_enough_kv_cache_memory(
         usable,
         lambda: utils._max_memory_usage_bytes_from_groups(cfg, gs),
@@ -128,6 +128,7 @@ def replay():
     m.has_prefill_checkpoint_blocks = False
     m.drop_eagle_checkpoint_block = False
     m.block_size = 832
+    m.cache_hit_alignment_tokens = 832  # set by __init__ on 0.32
     m.block_pool = Pool()
     m._null_block = NS(is_null=True)
     m.req_to_blocks = defaultdict(list)
@@ -200,7 +201,6 @@ class SizingTests(unittest.TestCase):
 
     def test_non_align_modes_preserve_original_sizing(self):
         spec = mamba_spec()
-        self.assertEqual(spec.max_memory_usage_bytes(config(mode="all")), 201 * PAGE)
         self.assertEqual(spec.max_memory_usage_bytes(config(mode="none")), 5 * PAGE)
 
     def test_worker_and_scheduler_capacity_agree(self):

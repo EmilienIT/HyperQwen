@@ -126,6 +126,7 @@ class MeasuredBoots(unittest.TestCase):
     def test_update_kv_cache_capacity_logs_the_budget(self):
         cfg = vllm_config(65536)
         cfg.device_config = ns(device_type="cuda")
+        cfg.attention_config = ns(hisparse_config=None)  # read by update_kv_cache_capacity on 0.32
         with mock.patch.object(kcu.logger, "info_once") as info:
             kcu.update_kv_cache_capacity(cfg, stack(448, 7, 380))
         self.assertTrue(any("KV cache seat budget" in c.args[0] for c in info.call_args_list))
