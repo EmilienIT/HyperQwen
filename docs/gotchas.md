@@ -1482,10 +1482,13 @@ Things that each cost us hours, in rough order of pain. Worth skimming before yo
     | full head (`MTP_DRAFT_VOCAB=0`) | 248,320 | 2.69 / 2.70 | 102.8 / 100.7 | 2.74 / 2.96 | 105.1 / 110.2 |
     | shipped + whole Cyrillic script (`--add-scripts cyrillic --script-budget 20000`) | 59,539 | 2.60 | 101.5 | 2.71 | 101.9 |
 
-    (First figure: the reporter's box; second: the maintainer's 3090, one boot per
-    arm.) The shipped list costs about 45% of Russian throughput; English moved
-    within the +-5% run-to-run spread on both boxes, and the full head also gives
-    the largest KV pool, since there is no second head tensor. The Cyrillic variant
+    (First figure: the reporter's box, one pass per arm; second: the maintainer's
+    3090, two boots per arm, which agreed to 0.2%.) The shipped list costs about 45%
+    of Russian throughput. On English the full head was inside the +-5% spread on
+    the reporter's box, and a consistent 2% slower on the maintainer's (109.9-110.2
+    against 112.4-112.5 tok/s, both boots), so it is not free for English-only
+    traffic, though it gives the largest KV pool, since there is no second head
+    tensor. The Cyrillic variant
     recovers the full head's Russian figure for +47.6 MB of int4 head. So for
     Russian output, `MTP_DRAFT_VOCAB=0` is the simplest fix and the variant list the
     smaller one. How much it matters depends on the mix: in the reporter's agent
