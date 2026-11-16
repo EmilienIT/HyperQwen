@@ -21,10 +21,10 @@ git -C "$W/src" submodule update -q --init --recursive --depth 1   # dlpack, pic
 # C++20 while xgrammar's own CMakeLists pins C++17 for the rest. libstdc++'s std::variant differs between the two, and
 # the -flto -Werror link fails on -Werror=odr. Hold the build environment (PIP_BUILD_CONSTRAINT on pip >= 25.3, which
 # no longer reads PIP_CONSTRAINT for the isolated build env; PIP_CONSTRAINT on older pip) and the venv's runtime copy
-# to the last C++17 series. Drop this with the directory, or when PIN moves to an xgrammar that builds as C++20.
-# The lower bound is the pinned xgrammar's own runtime requirement: the wheel goes in with --no-deps, so nothing
-# else would raise an older copy already in the venv.
-TVM_FFI='apache-tvm-ffi>=0.1.11,<0.1.16'
+# to the shared runtime version. vLLM 0.33.0 requires exactly 0.1.11 and tilelang also caps it at 0.1.11:
+# merely holding below 0.1.16 can install an incompatible 0.1.15 when repairing an older/newer runtime copy.
+# Build and run against the same C++17 version. Revisit this with the vLLM pin or when this directory retires.
+TVM_FFI='apache-tvm-ffi==0.1.11'
 echo "$TVM_FFI" > "$W/constraints.txt"
 PIP_BUILD_CONSTRAINT="$W/constraints.txt" PIP_CONSTRAINT="$W/constraints.txt" "$PY" -m pip wheel -q --no-deps -w "$W/dist" "$W/src"
 "$PY" -m pip install -q "$TVM_FFI"
