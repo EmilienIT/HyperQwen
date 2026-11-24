@@ -122,10 +122,11 @@ are runtime dependencies, not disposable build caches.
 
 ## Plugins and patches: keep the image's order
 
-xgrammar's pinned source enables LTO and treats warnings as errors. With
-Debian 13's GCC 14, linking fails on ODR violations that the image's GCC 13
-does not report. **`CXXFLAGS=-fno-lto`** disables cross-unit optimization for
-that build; it does not select a different xgrammar source revision.
+The verified Debian 13 build used `CXXFLAGS=-fno-lto` for xgrammar. GCC 13
+can also report a link-time ODR error when pip's isolated build selects an
+`apache-tvm-ffi` that compiles the bindings as C++20 while xgrammar uses C++17.
+For this checkout, constrain the build to the same `0.1.11` required by the
+installed vLLM 0.33.0 CUDA runtime. See [#474](https://github.com/syv-ai/HyperQwen/pull/474).
 
 From `$RELEASE`, with the environment above, build the plugins and run the
 Dockerfile's CPU checks. Strict mode (`set -euo pipefail`) applies only inside
@@ -138,7 +139,9 @@ interactive shell:
   export CUDA_VISIBLE_DEVICES=
   PY="$PY" bash pthfa/install.sh
   PY="$PY" bash fa2/install.sh
-  PY="$PY" CXXFLAGS=-fno-lto bash xgrammar/install.sh
+  printf '%s\n' 'apache-tvm-ffi==0.1.11' > "$RELEASE/.build-cache/xgrammar-constraints.txt"
+  PIP_BUILD_CONSTRAINT="$RELEASE/.build-cache/xgrammar-constraints.txt" \
+    PY="$PY" CXXFLAGS=-fno-lto bash xgrammar/install.sh
   PY="$PY" bash lsa/install.sh --no-map
   SP=$("$PY" -c 'import vllm, os; print(os.path.dirname(vllm.__file__))' | tail -n1)
   bash patches/apply.sh "$SP"
